@@ -158,8 +158,8 @@
           <div><label>City</label><input type="text" id="setCity" placeholder="Miami Beach"></div>
           <div><label>Country code</label><input type="text" id="setCountry" placeholder="us" style="text-transform:lowercase"></div>
           <div><label>Currency</label><select id="setCurrency"><option>USD</option><option>EUR</option><option>GBP</option><option>INR</option><option>CAD</option><option>AUD</option></select></div>
-          <div><label>Check-in from (days ahead)</label><input type="number" id="setOffset" min="0" max="90"></div>
-          <div><label>How many dates to check</label><input type="number" id="setCheckDates" min="1" max="30"></div>
+          <div><label>Start date <span style="color:var(--gold-dim)">(auto-rolls)</span></label><input type="date" id="setStartDate"></div>
+          <div><label>End date <span style="color:var(--gold-dim)">(auto-rolls)</span></label><input type="date" id="setEndDate"></div>
           <div><label>Nights per stay</label><input type="number" id="setNights" min="1" max="14"></div>
           <div><label>Adults</label><input type="number" id="setAdults" min="1" max="10"></div>
         </div>
@@ -297,8 +297,8 @@ async function loadAll() {
   $('setCity').value = CONFIG.city || '';
   $('setCountry').value = CONFIG.country || 'us';
   $('setCurrency').value = CONFIG.currency || 'USD';
-  $('setOffset').value = CONFIG.offsetDays ?? 1;
-  $('setCheckDates').value = CONFIG.checkDates || 1;
+  $('setStartDate').value = CONFIG.startDate || '';
+  $('setEndDate').value = CONFIG.endDate || '';
   $('setNights').value = CONFIG.nights || 1;
   $('setAdults').value = CONFIG.adults || 2;
   $('setMobile').checked = CONFIG.mobile !== false;
@@ -310,23 +310,26 @@ async function loadAll() {
   await refreshStatus();
 }
 function updateDatePreview() {
-  const off = +$('setOffset').value || 0, n = +$('setCheckDates').value || 1, nights = +$('setNights').value || 1;
-  const d = new Date(Date.now() + off * 86400000);
-  const iso = d.toISOString().slice(0, 10);
-  const end = new Date(Date.now() + (off + n - 1 + nights - 1) * 86400000).toISOString().slice(0, 10);
-  $('datePreview').textContent = `Will check ${n} date(s) starting ${iso} (each ${nights} night) — last check-in ${new Date(Date.now() + (off + n - 1) * 86400000).toISOString().slice(0, 10)}.`;
-  if (!window.__pv) { window.__pv = true; return; }
-  $('datePreview').innerHTML = `Will check <b>${n}</b> date(s) starting <b>${iso}</b> → last stay <b>${end}</b>. Example: set 10 ahead + 10 dates = watch the full 10-night window ahead.`;
+  const s = $('setStartDate').value, e = $('setEndDate').value, nights = +$('setNights').value || 1;
+  if (!s || !e) { $('datePreview').textContent = 'Pick a start and end date.'; return; }
+  const d1 = new Date(s + 'T00:00:00Z'), d2 = new Date(e + 'T00:00:00Z');
+  const n = Math.round((d2 - d1) / 86400000) + 1;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const sOff = Math.round((d1 - today) / 86400000);
+  const eOff = Math.round((d2 - today) / 86400000);
+  const clamp = Math.max(0, sOff);
+  $('datePreview').innerHTML = `Will check <b>${n}</b> date(s): <b>${s} → ${e}</b> (each ${nights} night). Auto-rolling: stays <b>${clamp}–${Math.max(clamp, eOff)} days ahead of today</b> — it updates itself every day, no need to change dates.`;
 }
-['setOffset', 'setCheckDates', 'setNights'].forEach(id => { const el = $(id); if (el) el.addEventListener('input', updateDatePreview); });
+['setStartDate', 'setEndDate', 'setNights'].forEach(id => { const el = $(id); if (el) el.addEventListener('change', updateDatePreview); });
 async function saveConfig() {
   const body = {
     city: $('setCity').value.trim(), country: $('setCountry').value.trim(), currency: $('setCurrency').value,
-    offsetDays: +$('setOffset').value, checkDates: +$('setCheckDates').value, nights: +$('setNights').value, adults: +$('setAdults').value,
+    startDate: $('setStartDate').value, endDate: $('setEndDate').value,
+    nights: +$('setNights').value, adults: +$('setAdults').value,
     mobile: $('setMobile').checked, stealth: $('setStealth').checked,
   };
   await api('/api/config', { method: 'POST', body: JSON.stringify(body) });
-  $('saveState').textContent = '✓ saved ' + new Date().toLocaleTimeString(); toast('Settings saved');
+  $('saveState').textContent = '✓ saved ' + new Date().toLocaleTimeString(); toast('Settings saved — date window rolls automatically with today');
   updateDatePreview();
 }
 async function saveSecrets() {

@@ -188,9 +188,14 @@ async function scrape(cfg, opts = {}) {
   const slug = slugify(cfg.city);
   const nights = cfg.nights || 1;
   const adults = cfg.adults || 2;
-  const checkDates = Math.max(1, Math.min(30, parseInt(opts.checkDates || cfg.checkDates || 1, 10)));
+  // rolling date window: startDaysFromToday → endDaysFromToday (auto-updates with today)
+  const startDays = Math.max(0, parseInt(cfg.startDaysFromToday ?? cfg.offsetDays ?? 1, 10));
+  let endDays = parseInt(cfg.endDaysFromToday, 10);
+  if (isNaN(endDays)) endDays = startDays + Math.max(1, Math.min(30, parseInt(cfg.checkDates || 1, 10))) - 1;
+  endDays = Math.max(endDays, startDays);
+  const checkDates = Math.min(30, endDays - startDays + 1);
   const addDays = (d, n) => { const x = new Date(d + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
-  const base = opts.checkin || (() => { const d = new Date(Date.now() + (cfg.offsetDays ?? 1) * 86400000); return d.toISOString().slice(0, 10); })();
+  const base = opts.checkin || (() => { const d = new Date(Date.now() + startDays * 86400000); return d.toISOString().slice(0, 10); })();
   // date pairs to check: from base, checkDates consecutive stays
   const pairs = [];
   for (let i = 0; i < checkDates; i++) {

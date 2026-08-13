@@ -35,9 +35,15 @@ async function getBrowser() {
 // ---- config API ----
 app.get('/api/config', (req, res) => {
   const c = cfg(); const s = secrets();
+  // computed rolling dates for the UI
+  const sDays = Math.max(0, parseInt(c.startDaysFromToday ?? c.offsetDays ?? 1, 10));
+  let eDays = parseInt(c.endDaysFromToday, 10);
+  if (isNaN(eDays)) eDays = sDays + Math.max(1, parseInt(c.checkDates || 1, 10)) - 1;
+  eDays = Math.max(eDays, sDays);
+  const iso = (days) => new Date(Date.now() + days * 86400000).toISOString().slice(0, 10);
   // merge non-secret email state; never echo the real app password
   res.json({
-    config: { ...c, gmailUser: s.gmailUser, gmailAppPass: s.gmailAppPass ? 'set' : '', emailTo: s.emailTo },
+    config: { ...c, startDaysFromToday: sDays, endDaysFromToday: eDays, startDate: iso(sDays), endDate: iso(eDays), gmailUser: s.gmailUser, gmailAppPass: s.gmailAppPass ? 'set' : '', emailTo: s.emailTo },
     emailConfigured: !!(s.gmailUser && s.gmailAppPass && s.emailTo),
     hasSecretsFile: fs.existsSync(SECRETS_FILE),
   });
@@ -51,12 +57,25 @@ app.post('/api/config', (req, res) => {
   next.myProperty = String(next.myProperty || '').trim();
   next.city = String(next.city || '').trim();
   next.country = String(next.country || 'us').trim().toLowerCase();
-  next.offsetDays = Math.max(0, parseInt(next.offsetDays, 10) || 0);
   next.nights = Math.max(1, Math.min(14, parseInt(next.nights, 10) || 1));
   next.adults = Math.max(1, Math.min(10, parseInt(next.adults, 10) || 2));
   next.currency = String(next.currency || 'USD').toUpperCase();
   next.mobile = next.mobile !== false;
   next.stealth = next.stealth !== false;
+  // rolling date window: accept startDate/endDate (ISO) or startDaysFromToday/endDaysFromToday
+  const today0 = new Date(); today0.setHours(0, 0, 0, 0);
+  const toDays = (iso) => { const d = new Date(iso + 'T00:00:00Z'); return Math.round((d - today0) / 86400000); };
+  let s = parseInt(next.startDaysFromToday ?? next.offsetDays ?? 1, 10);
+  let e = parseInt(next.endDaysFromToday, 10);
+  if (isNaN(e)) e = s + Math.max(1, Math.min(30, parseInt(next.checkDates || 1, 10))) - 1;
+  if (req.body.startDate) { const ds = toDays(String(req.body.startDate)); if (!isNaN(ds)) s = Math.max(0, ds); }
+  if (req.body.endDate) { const de = toDays(String(req.body.endDate)); if (!isNaN(de)) e = Math.max(s, de); }
+  s = Math.max(0, Math.min(365, s));
+  e = Math.max(s, Math.min(s + 29, e)); // cap at 30 dates
+  next.startDaysFromToday = s;
+  next.endDaysFromToday = e;
+  next.offsetDays = s;
+  next.checkDates = e - s + 1;
   writeJson(CONFIG_FILE, next);
   res.json({ ok: true, config: next });
 });
