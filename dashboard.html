@@ -156,10 +156,12 @@
           <div><label>City</label><input type="text" id="setCity" placeholder="Miami Beach"></div>
           <div><label>Country code</label><input type="text" id="setCountry" placeholder="us" style="text-transform:lowercase"></div>
           <div><label>Currency</label><select id="setCurrency"><option>USD</option><option>EUR</option><option>GBP</option><option>INR</option><option>CAD</option><option>AUD</option></select></div>
-          <div><label>Check from (days ahead)</label><input type="number" id="setOffset" min="0" max="90"></div>
-          <div><label>Nights</label><input type="number" id="setNights" min="1" max="14"></div>
+          <div><label>Check-in from (days ahead)</label><input type="number" id="setOffset" min="0" max="90"></div>
+          <div><label>How many dates to check</label><input type="number" id="setCheckDates" min="1" max="30"></div>
+          <div><label>Nights per stay</label><input type="number" id="setNights" min="1" max="14"></div>
           <div><label>Adults</label><input type="number" id="setAdults" min="1" max="10"></div>
         </div>
+        <div class="muted" id="datePreview" style="margin-top:10px"></div>
       </div>
       <div class="card">
         <h2>🛡 Preferences</h2>
@@ -288,23 +290,36 @@ async function loadAll() {
   $('setCountry').value = CONFIG.country || 'us';
   $('setCurrency').value = CONFIG.currency || 'USD';
   $('setOffset').value = CONFIG.offsetDays ?? 1;
+  $('setCheckDates').value = CONFIG.checkDates || 1;
   $('setNights').value = CONFIG.nights || 1;
   $('setAdults').value = CONFIG.adults || 2;
   $('setMobile').checked = CONFIG.mobile !== false;
   $('setStealth').checked = CONFIG.stealth !== false;
   $('propMine').value = CONFIG.myProperty || '';
   window.__comps = CONFIG.competitors || []; renderChips();
+  updateDatePreview();
   $('emailState').textContent = d.emailConfigured ? '✓ email configured' : '✗ email not configured yet';
   await refreshStatus();
 }
+function updateDatePreview() {
+  const off = +$('setOffset').value || 0, n = +$('setCheckDates').value || 1, nights = +$('setNights').value || 1;
+  const d = new Date(Date.now() + off * 86400000);
+  const iso = d.toISOString().slice(0, 10);
+  const end = new Date(Date.now() + (off + n - 1 + nights - 1) * 86400000).toISOString().slice(0, 10);
+  $('datePreview').textContent = `Will check ${n} date(s) starting ${iso} (each ${nights} night) — last check-in ${new Date(Date.now() + (off + n - 1) * 86400000).toISOString().slice(0, 10)}.`;
+  if (!window.__pv) { window.__pv = true; return; }
+  $('datePreview').innerHTML = `Will check <b>${n}</b> date(s) starting <b>${iso}</b> → last stay <b>${end}</b>. Example: set 10 ahead + 10 dates = watch the full 10-night window ahead.`;
+}
+['setOffset', 'setCheckDates', 'setNights'].forEach(id => { const el = $(id); if (el) el.addEventListener('input', updateDatePreview); });
 async function saveConfig() {
   const body = {
     city: $('setCity').value.trim(), country: $('setCountry').value.trim(), currency: $('setCurrency').value,
-    offsetDays: +$('setOffset').value, nights: +$('setNights').value, adults: +$('setAdults').value,
+    offsetDays: +$('setOffset').value, checkDates: +$('setCheckDates').value, nights: +$('setNights').value, adults: +$('setAdults').value,
     mobile: $('setMobile').checked, stealth: $('setStealth').checked,
   };
   await api('/api/config', { method: 'POST', body: JSON.stringify(body) });
   $('saveState').textContent = '✓ saved ' + new Date().toLocaleTimeString(); toast('Settings saved');
+  updateDatePreview();
 }
 async function saveSecrets() {
   await api('/api/secrets', { method: 'POST', body: JSON.stringify({
@@ -347,20 +362,34 @@ async function runScrape() {
   refreshStatus();
 }
 function renderRun(d) {
-  const r = d.report; let html = '';
-  if (r.undercut.length) html += `<div class="alert-box">⚠ <b>Undercut alert:</b> ${r.undercut.map(x => x.name + ' ($' + x.priceUSD + ')').join(', ')} — below your rate!</div>`;
-  else html += `<div class="ok-box">✓ No tracked competitor is cheaper than you right now.</div>`;
-  if (r.notFound.length) html += `<div class="muted" style="margin-bottom:10px">Not found on results pages (name variant or sold out): ${r.notFound.join(', ')}</div>`;
-  html += `<div class="card"><h2>${d.run.mode.toUpperCase()} rates — ${d.run.checkin} → ${d.run.checkout}</h2>
-  <table><thead><tr><th>Property</th><th>Price / night</th><th>vs you</th><th>Score</th></tr></thead><tbody>`;
-  if (r.mine) html += `<tr class="me"><td>⭐ ${r.mine.name}</td><td class="price">$${r.mine.priceUSD}</td><td>—</td><td>${r.mine.score || ''}</td></tr>`;
-  else html += `<tr class="me"><td>⭐ ${CONFIG.myProperty} <span class="badge warn">NOT FOUND</span></td><td>—</td><td>—</td><td>—</td></tr>`;
-  for (const c of r.competitors) {
-    const dCls = c.delta === null ? '' : c.delta < 0 ? 'delta-bad' : 'delta-ok';
-    const dTxt = c.delta === null ? 'n/a' : c.delta < 0 ? `$${-c.delta} cheaper` : c.delta === 0 ? 'same' : `+$${c.delta}`;
-    html += `<tr><td>${c.name}</td><td class="price">$${c.priceUSD}</td><td class="${dCls}">${dTxt}</td><td>${c.score || ''}</td></tr>`;
+  const reps = d.reports || [];
+  let html = '';
+  const undDates = reps.filter(r => r.undercut.length);
+  if (undDates.length) html += `<div class="alert-box">⚠ <b>Undercut alert:</b> a competitor is below your rate on ${undDates.length} of ${reps.length} date(s): ${undDates.map(r => r.checkin).join(', ')}</div>`;
+  else html += `<div class="ok-box">✓ No tracked competitor is cheaper than you on any checked date.</div>`;
+  const notFoundAll = [...new Set(reps.flatMap(r => r.notFound))];
+  if (notFoundAll.length) html += `<div class="muted" style="margin-bottom:10px">Not found on results pages (name variant or sold out): ${notFoundAll.join(', ')}</div>`;
+
+  html += `<div class="card"><h2>${d.run.mode.toUpperCase()} rates — ${reps[0].checkin} → ${reps[reps.length - 1].checkout} · ${reps.length} date(s)</h2>
+  <table><thead><tr><th>Dates</th><th>Your rate</th><th>Cheapest competitor</th><th>Vs you</th><th>Status</th></tr></thead><tbody>`;
+  for (const r of reps) {
+    const ch = r.competitors[0];
+    const dTxt = r.mine && ch ? (ch.delta < 0 ? `<span class="delta-bad">$${-ch.delta} under you</span>` : ch.delta === 0 ? 'same' : `<span class="delta-ok">+$${ch.delta}</span>`) : '—';
+    html += `<tr class="${r.mine ? 'me' : ''}"><td><b>${r.checkin} → ${r.checkout}</b></td>
+      <td class="price">${r.mine ? '$' + r.mine.priceUSD : '—'}</td>
+      <td>${ch ? '$' + ch.priceUSD + ' · ' + ch.name : '—'}</td><td>${dTxt}</td>
+      <td>${r.undercut.length ? '<span class="badge warn">⚠ below you</span>' : '<span class="badge ok">ok</span>'}</td></tr>`;
   }
-  html += `</tbody></table><div class="muted" style="margin-top:8px">${d.emailed ? '✓ email sent' : 'email not configured — set it in Settings'}</div></div>`;
+  html += `</tbody></table>`;
+
+  if (d.fullList) {
+    const all = reps[0].hotels.slice(0, 25);
+    html += `<div class="card" style="margin-top:14px"><h2>All properties — cheapest first (${reps[0].hotels.length} found)</h2>
+    <table><thead><tr><th>#</th><th>Property</th><th>Price / night</th><th>Score</th></tr></thead><tbody>`;
+    all.forEach((h, i) => { html += `<tr><td class="muted">${i + 1}</td><td>${h.name}</td><td class="price">$${h.priceUSD}</td><td>${h.score || ''}</td></tr>`; });
+    html += `</tbody></table></div>`;
+  }
+  html += `<div class="muted" style="margin-top:8px">${d.emailed ? '✓ professional email sent' : 'email not configured — set it in Settings'}</div></div>`;
   $('runResults').innerHTML = html;
 }
 

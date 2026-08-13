@@ -188,9 +188,15 @@ async function scrape(cfg, opts = {}) {
   const slug = slugify(cfg.city);
   const nights = cfg.nights || 1;
   const adults = cfg.adults || 2;
-  const nextDay = (d) => { const x = new Date(d + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + 1); return x.toISOString().slice(0, 10); };
-  const checkin = opts.checkin || (() => { const d = new Date(Date.now() + (cfg.offsetDays ?? 1) * 86400000); return d.toISOString().slice(0, 10); })();
-  const checkout = opts.checkout || nextDay(checkin);
+  const checkDates = Math.max(1, Math.min(30, parseInt(opts.checkDates || cfg.checkDates || 1, 10)));
+  const addDays = (d, n) => { const x = new Date(d + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
+  const base = opts.checkin || (() => { const d = new Date(Date.now() + (cfg.offsetDays ?? 1) * 86400000); return d.toISOString().slice(0, 10); })();
+  // date pairs to check: from base, checkDates consecutive stays
+  const pairs = [];
+  for (let i = 0; i < checkDates; i++) {
+    const ci = addDays(base, i);
+    pairs.push({ checkin: ci, checkout: addDays(ci, nights) });
+  }
 
   const attempts = stealth ? [true, true, false] : [true]; // ladder: stealth → headful local
   let lastErr = null;
@@ -206,45 +212,53 @@ async function scrape(cfg, opts = {}) {
       const dest = await getDestId(page, slug, country);
       if (!dest) throw new Error('dest_id lookup failed');
 
-      const q = new URLSearchParams({
-        ss: cfg.city, efdco: '1', lang: 'en-us', sb: '1', src_elem: 'sb', src: 'index',
-        dest_id: dest, dest_type: 'city',
-        checkin, checkout, group_adults: String(adults), no_rooms: '1', group_children: '0',
-        selected_currency: cfg.currency || 'USD',
-      });
-      if (sess.aid) q.set('aid', sess.aid);
-      if (sess.label) q.set('label', sess.label);
-      if (sess.sid) q.set('sid', sess.sid);
-      await page.goto(`https://www.booking.com/searchresults.html?${q.toString()}`, { waitUntil: 'domcontentloaded', timeout: 60000 });
-      try { await page.locator('#onetrust-accept-btn-handler').first().click({ timeout: 5000, force: true }); } catch (e) {}
-
-      try {
-        await page.waitForSelector('[data-testid="property-card"]', { timeout: 25000 });
-      } catch (e) {
-        const body = await page.evaluate(() => document.body.innerText.slice(0, 300));
-        if (/captcha|are you human|unusual traffic/i.test(body)) throw new Error('CAPTCHA_BLOCKED');
-        throw new Error('NO_CARDS: ' + body.slice(0, 120));
-      }
-      let hotels = [];
-      for (let i = 0; i < 6 && hotels.length === 0; i++) { await sleep(2000); hotels = await page.evaluate(extractPage); }
-      if (hotels.length === 0) throw new Error('PRICES_NOT_RENDERED');
-
-      // page 2 if targets missing
+      const dateRuns = [];
       const targets = [cfg.myProperty, ...(cfg.competitors || [])];
-      const stillMissing = targets.filter(t => !hotels.some(h => inName(h.name, t)));
-      if (stillMissing.length > 0) {
+      for (let di = 0; di < pairs.length; di++) {
+        const p = pairs[di];
+        const q = new URLSearchParams({
+          ss: cfg.city, efdco: '1', lang: 'en-us', sb: '1', src_elem: 'sb', src: 'index',
+          dest_id: dest, dest_type: 'city',
+          checkin: p.checkin, checkout: p.checkout, group_adults: String(adults), no_rooms: '1', group_children: '0',
+          selected_currency: cfg.currency || 'USD',
+        });
+        if (sess.aid) q.set('aid', sess.aid);
+        if (sess.label) q.set('label', sess.label);
+        if (sess.sid) q.set('sid', sess.sid);
+        await page.goto(`https://www.booking.com/searchresults.html?${q.toString()}`, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        try { await page.locator('#onetrust-accept-btn-handler').first().click({ timeout: 5000, force: true }); } catch (e) {}
+
         try {
-          const url2 = `https://www.booking.com/searchresults.html?${q.toString()}&offset=25`;
-          await page.goto(url2, { waitUntil: 'domcontentloaded', timeout: 60000 });
-          await sleep(4000);
-          const page2 = await page.evaluate(extractPage);
-          for (const h of page2) { if (!hotels.some(m => norm(m.name) === norm(h.name))) hotels.push(h); }
-        } catch (e) {}
+          await page.waitForSelector('[data-testid="property-card"]', { timeout: 25000 });
+        } catch (e) {
+          const body = await page.evaluate(() => document.body.innerText.slice(0, 300));
+          if (/captcha|are you human|unusual traffic/i.test(body)) throw new Error('CAPTCHA_BLOCKED');
+          throw new Error('NO_CARDS: ' + body.slice(0, 120));
+        }
+        let hotels = [];
+        for (let i = 0; i < 6 && hotels.length === 0; i++) { await sleep(2000); hotels = await page.evaluate(extractPage); }
+        if (hotels.length === 0) throw new Error('PRICES_NOT_RENDERED');
+
+        // page 2 (first date only) if some targets still missing
+        if (di === 0) {
+          const stillMissing = targets.filter(t => !hotels.some(h => inName(h.name, t)));
+          if (stillMissing.length > 0) {
+            try {
+              const url2 = `https://www.booking.com/searchresults.html?${q.toString()}&offset=25`;
+              await page.goto(url2, { waitUntil: 'domcontentloaded', timeout: 60000 });
+              await sleep(4000);
+              const page2 = await page.evaluate(extractPage);
+              for (const h of page2) { if (!hotels.some(m => norm(m.name) === norm(h.name))) hotels.push(h); }
+            } catch (e) {}
+          }
+        }
+        dateRuns.push({ checkin: p.checkin, checkout: p.checkout, hotels });
+        await sleep(1500); // polite gap between dates
       }
 
       await saveState(context); // refresh session cookies
       await browser.close();
-      return { hotels, dest, checkin, checkout, mode: mobile ? 'mobile' : 'desktop' };
+      return { dateRuns, dest, mode: mobile ? 'mobile' : 'desktop', nights, adults, checkDates };
     } catch (e) {
       lastErr = e;
       if (browser) await browser.close().catch(() => {});

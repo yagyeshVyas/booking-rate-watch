@@ -1,12 +1,16 @@
 {
   "city": "Manteo",
   "country": "us",
-  "offsetDays": 1,
+  "offsetDays": 10,
   "nights": 1,
   "adults": 2,
   "myProperty": "Heart of manteo",
-  "competitors": [],
+  "competitors": [
+    "Hotel Manteo, Trademark Collection by Wyndham",
+    "Scarborough Inn"
+  ],
   "currency": "USD",
   "mobile": true,
-  "stealth": true
+  "stealth": true,
+  "checkDates": 10
 }

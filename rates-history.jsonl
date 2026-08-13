@@ -7,3 +7,11 @@
 {"at":"2026-08-13T20:28:00.434Z","city":"Manteo","checkin":"2026-08-14","checkout":"2026-08-15","mode":"mobile","mine":{"name":"Heart of Manteo","price":177},"competitors":[]}
 {"at":"2026-08-13T20:28:18.369Z","city":"Manteo","checkin":"2026-08-14","checkout":"2026-08-15","mode":"mobile","mine":{"name":"Heart of Manteo","price":177},"competitors":[]}
 {"at":"2026-08-13T20:30:53.187Z","city":"Manteo","checkin":"2026-08-14","checkout":"2026-08-15","mode":"mobile","mine":{"name":"Heart of Manteo","price":177},"competitors":[]}
+<<<<<<< HEAD
+=======
+{"at":"2026-08-13T20:34:37.131Z","city":"Manteo","checkin":"2026-08-23","checkout":"2026-08-24","mode":"mobile","mine":{"name":"Heart of Manteo","price":68},"competitors":[{"name":"Scarborough Inn","price":91},{"name":"Hotel Manteo, Trademark Collection by Wyndham","price":101}]}
+{"at":"2026-08-13T20:40:35.547Z","city":"Manteo","checkin":"2026-08-23","checkout":"2026-08-24","mode":"mobile","mine":{"name":"Heart of Manteo","price":68},"competitors":[{"name":"Scarborough Inn","price":91},{"name":"Hotel Manteo, Trademark Collection by Wyndham","price":101}]}
+{"at":"2026-08-13T20:41:20.201Z","city":"Manteo","checkin":"2026-08-23","checkout":"2026-08-24","mode":"mobile","mine":{"name":"Heart of Manteo","price":68},"competitors":[{"name":"Scarborough Inn","price":91},{"name":"Hotel Manteo, Trademark Collection by Wyndham","price":101}]}
+{"at":"2026-08-13T20:41:20.202Z","city":"Manteo","checkin":"2026-08-24","checkout":"2026-08-25","mode":"mobile","mine":{"name":"Heart of Manteo","price":68},"competitors":[{"name":"Scarborough Inn","price":91},{"name":"Hotel Manteo, Trademark Collection by Wyndham","price":104}]}
+{"at":"2026-08-13T20:41:20.203Z","city":"Manteo","checkin":"2026-08-25","checkout":"2026-08-26","mode":"mobile","mine":{"name":"Heart of Manteo","price":68},"competitors":[{"name":"Scarborough Inn","price":91},{"name":"Hotel Manteo, Trademark Collection by Wyndham","price":109}]}
+>>>>>>> 1ed8c13 (v3: multi-date checking (checkDates: offset+N consecutive stays), full property list when no competitors, professional HTML email (date-by-date table, undercut alerts, ranked full list), fixed start.bat CRLF+nested-paren bug)

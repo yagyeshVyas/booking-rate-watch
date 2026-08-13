@@ -14,14 +14,50 @@ const TEST_EMAIL = args.includes('--test-email');
 const cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
 const city = arg('--city') || cfg.city;
 const nights = parseInt(arg('--nights') || cfg.nights || 1, 10);
-const checkin = arg('--checkin') || (() => { const d = new Date(Date.now() + (cfg.offsetDays ?? 1) * 86400000); return d.toISOString().slice(0, 10); })();
 
-async function sendEmail(subject, text) {
+const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+function renderEmailHtml(c, runs) {
+  const mine = c.myProperty;
+  const hasComps = (c.competitors || []).length > 0;
+  const total = runs.reduce((s, r) => s + r.hotels.length, 0);
+  const und = runs.filter(r => r.undercut.length);
+  let rows = '';
+  for (const r of runs) {
+    const cheapest = r.competitors[0];
+    const deltaTxt = r.mine && cheapest ? (cheapest.delta < 0 ? `<span style="color:#c0392b;font-weight:600">$${-cheapest.delta} under you</span>` : cheapest.delta === 0 ? 'same price' : `<span style="color:#1e8449">+$${cheapest.delta} above you</span>`) : '—';
+    rows += `<tr><td style="padding:9px 12px;border-bottom:1px solid #eee;font-weight:600">${r.checkin} → ${r.checkout}</td><td style="padding:9px 12px;border-bottom:1px solid #eee">${r.mine ? '<b>$' + r.mine.priceUSD + '</b>' : '<span style="color:#999">not found</span>'}</td><td style="padding:9px 12px;border-bottom:1px solid #eee">${cheapest ? '<b>$' + cheapest.priceUSD + '</b> · ' + esc(cheapest.name) : '—'}</td><td style="padding:9px 12px;border-bottom:1px solid #eee">${deltaTxt}</td><td style="padding:9px 12px;border-bottom:1px solid #eee">${r.undercut.length ? '<span style="background:#fdecea;color:#c0392b;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600">⚠ below you</span>' : '<span style="background:#eafaf1;color:#1e8449;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600">✓ ok</span>'}</td></tr>`;
+  }
+  let listSection = '';
+  if (!hasComps) {
+    const all = runs[0].hotels.slice(0, 25);
+    const li = all.map((h, i) => `<tr><td style="padding:7px 12px;border-bottom:1px solid #f2f2f2;color:#888">${i + 1}</td><td style="padding:7px 12px;border-bottom:1px solid #f2f2f2">${esc(h.name)}${h.url ? ` <a href="${h.url}" style="color:#2980b9;font-size:11px">view</a>` : ''}</td><td style="padding:7px 12px;border-bottom:1px solid #f2f2f2"><b>$${h.priceUSD}</b></td><td style="padding:7px 12px;border-bottom:1px solid #f2f2f2;color:#888">${esc(h.score || '')}</td></tr>`).join('');
+    listSection = `<h2 style="font-size:15px;color:#333;margin:26px 0 10px">All properties in ${esc(c.city)} — cheapest first (${runs[0].hotels.length} found${all.length < runs[0].hotels.length ? ', showing top ' + all.length : ''})</h2><table style="border-collapse:collapse;width:100%;font-size:13px"><tr style="color:#888;text-align:left;font-size:11px;text-transform:uppercase"><th style="padding:6px 12px;border-bottom:2px solid #eee">#</th><th style="padding:6px 12px;border-bottom:2px solid #eee">Property</th><th style="padding:6px 12px;border-bottom:2px solid #eee">Price / night</th><th style="padding:6px 12px;border-bottom:2px solid #eee">Score</th></tr>${li}</table><p style="color:#888;font-size:12px;margin-top:6px">Prices are the cheapest available rate for 1 room · ${c.adults} adults, as shown on Booking's mobile site for ${runs[0].checkin} → ${runs[0].checkout}.</p>`;
+  } else {
+    listSection = `<h2 style="font-size:15px;color:#333;margin:26px 0 10px">Tracked competitors — ${esc(c.city)}</h2><p style="color:#888;font-size:13px">${(c.competitors || []).map(esc).join(' · ')}</p><p style="color:#888;font-size:12px;margin-top:10px">Date-by-date rates in the table above.</p>`;
+  }
+  const undAlert = und.length
+    ? `<div style="background:#fdecea;border:1px solid #f5b7b1;border-radius:8px;padding:12px 16px;margin:14px 0;color:#922b21;font-size:13.5px"><b>⚠ Undercut alert:</b> a tracked competitor is cheaper than you on ${und.length} of ${runs.length} checked date(s). See table.</div>`
+    : `<div style="background:#eafaf1;border:1px solid #a9dfbf;border-radius:8px;padding:12px 16px;margin:14px 0;color:#145a32;font-size:13.5px"><b>✓ Good news:</b> no tracked competitor is cheaper than you on any checked date.</div>`;
+  return `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f7f6f2;font-family:Segoe UI,Arial,sans-serif">
+<div style="background:#141414;padding:22px 30px"><div style="font-size:20px;font-weight:700;color:#d4af37">Rate Watch</div><div style="font-size:12px;color:#999;margin-top:2px">Booking.com mobile rates · ${esc(c.city)}</div></div>
+<div style="padding:24px 30px;background:#fff;max-width:640px;margin:0 auto">
+  <h1 style="font-size:17px;color:#222;margin:0 0 4px">Rate report — ${runs[0].checkin} → ${runs[runs.length - 1].checkout}</h1>
+  <p style="color:#888;font-size:12.5px;margin:0 0 8px">${runs.length} date(s) checked · ${total} live prices · mobile rates · ${c.adults} adults · ${c.currency}</p>
+  ${undAlert}
+  <h2 style="font-size:15px;color:#333;margin:20px 0 10px">Date by date${mine ? ' — your property: <span style="color:#b8860b">' + esc(mine) + '</span>' : ''}</h2>
+  <table style="border-collapse:collapse;width:100%;font-size:13px"><tr style="color:#888;text-align:left;font-size:11px;text-transform:uppercase"><th style="padding:6px 12px;border-bottom:2px solid #eee">Dates</th><th style="padding:6px 12px;border-bottom:2px solid #eee">Your rate</th><th style="padding:6px 12px;border-bottom:2px solid #eee">Cheapest competitor</th><th style="padding:6px 12px;border-bottom:2px solid #eee">Vs you</th><th style="padding:6px 12px;border-bottom:2px solid #eee">Status</th></tr>${rows}</table>
+  ${listSection}
+  <p style="color:#aaa;font-size:11px;margin-top:28px;border-top:1px solid #eee;padding-top:12px">Automated rate watch — runs every 5 hours. Prices change frequently; verify on Booking.com before relying on them. This is a personal competitive-research tool.</p>
+</div></body></html>`;
+}
+
+async function sendEmail(subject, html) {
   const user = process.env.GMAIL_USER, pass = process.env.GMAIL_APP_PASS, to = process.env.EMAIL_TO || cfg.email?.to;
   if (!user || !pass || !to) { console.log('EMAIL_SKIPPED (set GMAIL_USER, GMAIL_APP_PASS, EMAIL_TO)'); return false; }
   const nodemailer = require('nodemailer');
   const t = nodemailer.createTransport({ host: 'smtp.gmail.com', port: 465, secure: true, auth: { user, pass } });
-  await t.sendMail({ from: `"Rate Watch" <${user}>`, to, subject, text });
+  await t.sendMail({ from: `"Rate Watch" <${user}>`, to, subject, html });
   console.log('EMAIL_SENT to', to);
   return true;
 }
@@ -29,42 +65,40 @@ async function sendEmail(subject, text) {
 const inName = (h, t) => core.norm(h).includes(core.norm(t).slice(0, 24));
 
 (async () => {
-  if (TEST_EMAIL) { await sendEmail('Rate Watch test', 'Test email from Booking rate watch.'); return; }
+  if (TEST_EMAIL) { await sendEmail('Rate Watch test', '<p>Test email from Booking rate watch.</p>'); return; }
 
   const runCfg = { ...cfg, city };
-  console.error(`SCRAPE city=${city} checkin=${checkin} nights=${nights} mode=${MOBILE ? 'mobile' : 'desktop'}`);
-  const r = await core.scrape(runCfg, { mobile: MOBILE, checkin });
+  console.error(`SCRAPE city=${city} checkDates=${runCfg.checkDates || 1} mode=${MOBILE ? 'mobile' : 'desktop'}`);
+  const r = await core.scrape(runCfg, { mobile: MOBILE });
 
-  const found = {}, notFound = [];
-  for (const t of [cfg.myProperty, ...(cfg.competitors || [])]) {
-    const hit = r.hotels.find(h => inName(h.name, t));
-    if (hit) found[t] = hit; else notFound.push(t);
+  const hasComps = (cfg.competitors || []).length > 0;
+  const reports = r.dateRuns.map(dr => {
+    const found = {}, notFound = [];
+    for (const t of [cfg.myProperty, ...(cfg.competitors || [])]) {
+      const hit = dr.hotels.find(h => inName(h.name, t));
+      if (hit) found[t] = hit; else notFound.push(t);
+    }
+    const mine = found[cfg.myProperty];
+    const comps = Object.entries(found).filter(([k]) => k !== cfg.myProperty)
+      .map(([k, h]) => ({ key: k, ...h, delta: mine ? h.priceUSD - mine.priceUSD : null }))
+      .sort((a, b) => a.priceUSD - b.priceUSD);
+    return { checkin: dr.checkin, checkout: dr.checkout, hotels: dr.hotels, mine, competitors: comps, notFound, undercut: comps.filter(x => x.delta < 0) };
+  });
+
+  for (const rep of reports) {
+    try {
+      fs.appendFileSync(path.join(__dirname, 'rates-history.jsonl'), JSON.stringify({ at: new Date().toISOString(), city, checkin: rep.checkin, checkout: rep.checkout, mode: r.mode, mine: rep.mine ? { name: rep.mine.name, price: rep.mine.priceUSD } : null, competitors: rep.competitors.map(x => ({ name: x.name, price: x.priceUSD })) }) + '\n');
+    } catch (e) {}
   }
-  const mine = found[cfg.myProperty];
-  const comps = Object.entries(found).filter(([k]) => k !== cfg.myProperty)
-    .map(([k, h]) => ({ name: k, ...h, delta: mine ? h.priceUSD - mine.priceUSD : null }))
-    .sort((a, b) => a.priceUSD - b.priceUSD);
-  const undercut = comps.filter(c => c.delta < 0);
 
-  try {
-    fs.appendFileSync(path.join(__dirname, 'rates-history.jsonl'), JSON.stringify({ at: new Date().toISOString(), city, checkin: r.checkin, checkout: r.checkout, mode: r.mode, mine: mine ? { name: mine.name, price: mine.priceUSD } : null, competitors: comps.map(c => ({ name: c.name, price: c.priceUSD })) }) + '\n');
-  } catch (e) {}
-
-  const dates = `${r.checkin} → ${r.checkout} (${nights} night${nights > 1 ? 's' : ''})`;
   console.log(JSON.stringify({
-    mode: r.mode, city, dates, dest_id: r.dest, totalHotelsOnPage: r.hotels.length,
-    my: mine, competitors: comps, notFound, undercut: undercut.map(c => c.name),
-    cheapestCompetitor: comps[0] || null,
+    mode: r.mode, city, checkDates: r.checkDates, dest_id: r.dest,
+    reports: reports.map(x => ({ checkin: x.checkin, checkout: x.checkout, totalHotelsOnPage: x.hotels.length, my: x.mine, competitors: x.competitors, notFound: x.notFound, undercut: x.undercut.map(c => c.name) })),
+    fullList: !hasComps,
   }, null, 2));
 
-  const lines = [`Booking.com ${r.mode.toUpperCase()} rates — ${city}, ${dates}`];
-  lines.push(mine ? `YOUR PROPERTY: ${mine.name} — $${mine.priceUSD}` : `YOUR PROPERTY: NOT FOUND (check name "${cfg.myProperty}")`);
-  lines.push(''); lines.push('COMPETITORS (cheapest first):');
-  for (const c of comps) lines.push(`  $${c.priceUSD}  ${c.name}  (${c.delta === null ? 'n/a' : c.delta < 0 ? `$${-c.delta} CHEAPER` : c.delta === 0 ? 'same' : `$${c.delta} pricier`})`);
-  if (notFound.length) lines.push(''); lines.push(`NOT FOUND: ${notFound.join(', ')}`);
-  if (undercut.length) { lines.push(''); lines.push('⚠ ALERT — competitors under you:'); for (const c of undercut) lines.push(`  ${c.name} $${c.priceUSD} vs your $${mine.priceUSD}`); }
-  else if (mine) { lines.push(''); lines.push('✅ You are the cheapest or tied among tracked hotels.'); }
-
-  const subject = `[RateWatch] ${city} ${r.checkin} — ${mine ? '$' + mine.priceUSD : 'n/a'} vs comps ${comps[0] ? '$' + comps[0].priceUSD : 'n/a'}${undercut.length ? ' ⚠UNDERCUT' : ''}`;
-  await sendEmail(subject, lines.join('\n'));
+  const undCount = reports.filter(x => x.undercut.length).length;
+  const firstMine = reports[0].mine;
+  const subj = `[RateWatch] ${city} ${reports[0].checkin}→${reports[reports.length - 1].checkout} · you ${firstMine ? '$' + firstMine.priceUSD : 'n/a'}${undCount ? ' ⚠' : ''}`;
+  await sendEmail(subj, renderEmailHtml(runCfg, reports));
 })().catch(e => { console.error('FATAL:', e.message); process.exit(/CAPTCHA/.test(e.message) ? 2 : 1); });
