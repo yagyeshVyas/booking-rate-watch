@@ -1,0 +1,14 @@
+{
+  "city": "Miami Beach",
+  "country": "us",
+  "offsetDays": 1,
+  "nights": 1,
+  "adults": 2,
+  "myProperty": "Sherry Frontenac Oceanfront",
+  "competitors": [
+    "Shelley Hotel",
+    "Hotel Chelsea",
+    "James Hotel",
+    "Century Hotel"
+  ]
+}
