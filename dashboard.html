@@ -147,7 +147,9 @@
         <div class="row-actions">
           <button class="btn ghost small" onclick="saveSecrets()">Save email</button>
           <button class="btn ghost small" onclick="testEmail()">Send test email</button>
+          <button class="btn ghost small" onclick="syncGh()">↗ Sync to GitHub</button>
           <span class="muted" id="emailState"></span>
+          <span class="muted" id="ghState"></span>
         </div>
       </div>
       <div class="card">
@@ -194,6 +196,7 @@
           <button class="btn" onclick="saveProperties()">Save properties</button>
           <button class="btn ghost" onclick="refreshNames(false)">⟳ Refresh name list</button>
           <button class="btn ghost" onclick="refreshNames(true)">⟳ Deep refresh (slower, more names)</button>
+          <span class="muted" id="propsState"></span>
           <span class="muted" id="namesState"></span>
         </div>
       </div>
@@ -264,7 +267,12 @@ function ac(input, listEl, onPick, extra) {
     }, 200);
   });
   input.addEventListener('blur', () => setTimeout(() => listEl.style.display = 'none', 180));
-  input.addEventListener('keydown', e => { if (e.key === 'Escape') listEl.style.display = 'none'; });
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Escape') listEl.style.display = 'none';
+    if (e.key === 'Enter' && input === $('propComp') && input.value.trim()) {
+      e.preventDefault(); addComp(input.value.trim()); listEl.style.display = 'none';
+    }
+  });
 }
 
 /* ---------- properties ---------- */
@@ -322,11 +330,13 @@ async function saveConfig() {
   updateDatePreview();
 }
 async function saveSecrets() {
-  await api('/api/secrets', { method: 'POST', body: JSON.stringify({
-    gmailUser: $('setGmailUser').value.trim(), gmailAppPass: $('setGmailPass').value.trim(), emailTo: $('setEmailTo').value.trim(),
-  }) });
-  $('emailState').textContent = '✓ saved'; toast('Email settings saved');
-  await refreshStatus();
+  const body = { gmailUser: $('setGmailUser').value.trim(), emailTo: $('setEmailTo').value.trim() };
+  const pv = $('setGmailPass').value;
+  // placeholder dots = untouched → OMIT key so the stored password is kept
+  if (!(pv && pv.includes('•'))) body.gmailAppPass = pv.trim();
+  const r = await api('/api/secrets', { method: 'POST', body: JSON.stringify(body) });
+  $('emailState').textContent = r.fields.gmailAppPass ? '✓ saved (password kept)' : '⚠ saved — app password is EMPTY, paste it again';
+  toast('Email settings saved'); await refreshStatus();
 }
 async function testEmail() {
   await saveSecrets();
@@ -334,15 +344,25 @@ async function testEmail() {
   try { await api('/api/test-email', { method: 'POST' }); $('emailState').textContent = '✓ test email sent — check inbox'; toast('Test email sent'); }
   catch (e) { $('emailState').textContent = '✗ ' + e.message; }
 }
+async function syncGh() {
+  $('ghState').textContent = 'syncing…';
+  try {
+    const d = await api('/api/sync-gh', { method: 'POST' });
+    $('ghState').textContent = d.pushed ? '✓ ' + d.msg : '✓ ' + d.msg;
+    toast(d.msg);
+  } catch (e) { $('ghState').textContent = '✗ ' + e.message; }
+}
 async function saveProperties() {
-  await api('/api/config', { method: 'POST', body: JSON.stringify({ myProperty: $('propMine').value.trim(), competitors: window.__comps }) });
-  toast('Properties saved'); await loadAll();
+  const r = await api('/api/config', { method: 'POST', body: JSON.stringify({ myProperty: $('propMine').value.trim(), competitors: window.__comps }) });
+  $('propsState').textContent = `✓ saved ${new Date().toLocaleTimeString()} — ${r.config.competitors.length} competitor(s)`;
+  toast('Properties saved — click ↗ Sync to GitHub so the 5h job uses them');
 }
 async function refreshNames(deep) {
   $('namesState').textContent = 'building list…';
   try {
-    const d = await api('/api/refresh-names', { method: 'POST', body: JSON.stringify({ deep: !!deep }) });
-    $('namesState').textContent = `✓ ${d.count} properties indexed${d.deep ? ' (deep)' : ''}`; toast(`${d.count} property names ready`);
+    // use the current city/country fields even if not saved yet
+    const d = await api('/api/refresh-names', { method: 'POST', body: JSON.stringify({ deep: !!deep, city: $('setCity').value.trim(), country: $('setCountry').value.trim() }) });
+    $('namesState').textContent = `✓ ${d.count} properties indexed for ${d.city}${d.deep ? ' (deep)' : ''}`; toast(`${d.count} property names ready`);
   } catch (e) { $('namesState').textContent = '✗ ' + e.message; }
   await refreshStatus();
 }

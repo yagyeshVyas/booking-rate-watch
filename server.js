@@ -63,10 +63,14 @@ app.post('/api/config', (req, res) => {
 
 app.post('/api/secrets', (req, res) => {
   const cur = secrets();
-  const next = { ...cur, ...req.body };
-  for (const k of ['gmailUser', 'gmailAppPass', 'emailTo']) next[k] = String(next[k] || '').trim();
+  const next = { ...cur };
+  // Key ABSENT → keep existing. Key '' (empty) → clear. Placeholder values → keep existing.
+  for (const k of ['gmailUser', 'gmailAppPass', 'emailTo']) {
+    const v = String(req.body[k] ?? '__KEEP__').trim();
+    if (v !== '__KEEP__' && v !== '••••••••' && v !== 'set' && v !== 'SET') next[k] = v;
+  }
   writeJson(SECRETS_FILE, next);
-  res.json({ ok: true, emailConfigured: !!(next.gmailUser && next.gmailAppPass && next.emailTo) });
+  res.json({ ok: true, emailConfigured: !!(next.gmailUser && next.gmailAppPass && next.emailTo), fields: { gmailUser: !!next.gmailUser, gmailAppPass: !!next.gmailAppPass, emailTo: !!next.emailTo } });
 });
 
 // ---- test email ----
@@ -221,15 +225,39 @@ app.get('/api/suggest', (req, res) => {
 app.post('/api/refresh-names', async (req, res) => {
   try {
     const c = cfg();
+    // allow unsaved city/country from the UI to build the right index immediately
+    const city = String(req.body.city || '').trim() || c.city;
+    const country = String(req.body.country || '').trim() || c.country;
     const deep = !!req.body.deep;
     const browser = await getBrowser();
     const context = await core.newContext(browser, false, fs.existsSync(core.STATE_FILE) ? JSON.parse(fs.readFileSync(core.STATE_FILE, 'utf8')) : undefined);
     const page = await context.newPage();
-    const sess = await core.getSession(page, c.country);
-    const names = await core.buildNameIndex(page, core.slugify(c.city), c.country, deep);
+    await core.getSession(page, country);
+    const names = await core.buildNameIndex(page, core.slugify(city), country, deep);
     nameIndex = names;
     await context.close().catch(() => {});
-    res.json({ ok: true, count: names.length, sample: names.slice(0, 8).map(x => x.name), deep });
+    res.json({ ok: true, count: names.length, sample: names.slice(0, 8).map(x => x.name), deep, city });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// ---- sync config + history to GitHub (so the 5h job uses dashboard settings) ----
+app.post('/api/sync-gh', async (req, res) => {
+  const { execFile } = require('child_process');
+  const run = (cmd, args) => new Promise((resolve) => {
+    execFile(cmd, args, { cwd: ROOT, timeout: 60000 }, (err, stdout, stderr) => resolve({ err, out: (stdout || '') + (stderr || '') }));
+  });
+  try {
+    let r = await run('git', ['add', 'config.json', 'rates-history.jsonl']);
+    if (r.err) return res.status(500).json({ ok: false, error: r.out.slice(0, 300) });
+    r = await run('git', ['diff', '--cached', '--quiet']);
+    const hasChanges = r.err !== null && r.err.code === 1; // exit 1 = changes staged
+    if (!hasChanges) return res.json({ ok: true, pushed: false, msg: 'config already in sync with GitHub' });
+    r = await run('git', ['-c', 'user.name=RateWatch Dashboard', '-c', 'user.email=ratewatch@users.noreply.github.com', 'commit', '-m', 'dashboard config sync ' + new Date().toISOString()]);
+    if (r.err) return res.status(500).json({ ok: false, error: r.out.slice(0, 300) });
+    r = await run('git', ['pull', '--rebase', '--autostash', 'origin', 'main']);
+    r = await run('git', ['push', 'origin', 'main']);
+    if (r.err) return res.status(500).json({ ok: false, error: r.out.slice(0, 300) });
+    res.json({ ok: true, pushed: true, msg: 'config synced to GitHub — the 5-hour email job will use these settings' });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
