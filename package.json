@@ -1,10 +1,10 @@
 {
-  "name": "booking-rate-watch",
+  "name": "price-watch",
   "version": "2.0.0",
   "private": true,
   "description": "Free Booking.com mobile-rate watcher + local management dashboard: own property vs competitors, emailed every 5h via GitHub Actions.",
   "scripts": {
-    "watch": "node ratewatch.js --config config.json",
+    "watch": "node watch.js --config config.json",
     "dashboard": "node server.js"
   },
   "dependencies": {

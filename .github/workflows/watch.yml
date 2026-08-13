@@ -1,4 +1,4 @@
-name: Booking Rate Watch
+name: Price Watch
 
 on:
   schedule:
@@ -28,7 +28,7 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Scrape + compare + email
-        run: node ratewatch.js --config config.json
+        run: node watch.js --config config.json
         env:
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASS: ${{ secrets.GMAIL_APP_PASS }}

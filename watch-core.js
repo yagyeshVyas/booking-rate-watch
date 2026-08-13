@@ -1,6 +1,6 @@
-// ratewatch-core.js — shared engine: stealth browser, session persistence, scraping,
+// watch-core.js — shared engine: stealth browser, session persistence, scraping,
 // dest_id lookup, property-name index. No deps beyond playwright. Used by server.js (dashboard)
-// and ratewatch.js (CLI / GitHub Actions).
+// and watch.js (CLI / GitHub Actions).
 const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');

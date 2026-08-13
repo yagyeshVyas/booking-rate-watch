@@ -1,9 +1,9 @@
-// ratewatch.js — CLI entry (also used by GitHub Actions). Uses ratewatch-core.
-// Usage: node ratewatch.js --config config.json [--desktop] [--test-email]
-//        node ratewatch.js --city "Las Vegas" --checkin 2026-09-01 --nights 2
+// watch.js — CLI entry (also used by GitHub Actions). Uses watch-core.
+// Usage: node watch.js --config config.json [--desktop] [--test-email]
+//        node watch.js --city "Las Vegas" --checkin 2026-09-01 --nights 2
 const path = require('path');
 const fs = require('fs');
-const core = require('./ratewatch-core.js');
+const core = require('./watch-core.js');
 
 const args = process.argv.slice(2);
 const arg = (k) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : null; };
@@ -40,7 +40,7 @@ function renderEmailHtml(c, runs) {
     ? `<div style="background:#fdecea;border:1px solid #f5b7b1;border-radius:8px;padding:12px 16px;margin:14px 0;color:#922b21;font-size:13.5px"><b>⚠ Undercut alert:</b> a tracked competitor is cheaper than you on ${und.length} of ${runs.length} checked date(s). See table.</div>`
     : `<div style="background:#eafaf1;border:1px solid #a9dfbf;border-radius:8px;padding:12px 16px;margin:14px 0;color:#145a32;font-size:13.5px"><b>✓ Good news:</b> no tracked competitor is cheaper than you on any checked date.</div>`;
   return `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f7f6f2;font-family:Segoe UI,Arial,sans-serif">
-<div style="background:#141414;padding:22px 30px"><div style="font-size:20px;font-weight:700;color:#d4af37">Rate Watch</div><div style="font-size:12px;color:#999;margin-top:2px">Booking.com mobile rates · ${esc(c.city)}</div></div>
+<div style="background:#141414;padding:22px 30px"><div style="font-size:20px;font-weight:700;color:#d4af37">Price Watch</div><div style="font-size:12px;color:#999;margin-top:2px">Booking.com mobile rates · ${esc(c.city)}</div></div>
 <div style="padding:24px 30px;background:#fff;max-width:640px;margin:0 auto">
   <h1 style="font-size:17px;color:#222;margin:0 0 4px">Rate report — ${runs[0].checkin} → ${runs[runs.length - 1].checkout}</h1>
   <p style="color:#888;font-size:12.5px;margin:0 0 8px">${runs.length} date(s) checked · ${total} live prices · mobile rates · ${c.adults} adults · ${c.currency}</p>
@@ -66,7 +66,7 @@ async function sendEmail(subject, html) {
   if (!user || !pass || !to) { console.log('EMAIL_SKIPPED (set GMAIL_USER, GMAIL_APP_PASS, EMAIL_TO or configure email in the dashboard)'); return false; }
   const nodemailer = require('nodemailer');
   const t = nodemailer.createTransport({ host: 'smtp.gmail.com', port: 465, secure: true, auth: { user, pass } });
-  await t.sendMail({ from: `"Rate Watch" <${user}>`, to, subject, html });
+  await t.sendMail({ from: `"Price Watch" <${user}>`, to, subject, html });
   console.log('EMAIL_SENT to', to);
   return true;
 }
@@ -74,7 +74,7 @@ async function sendEmail(subject, html) {
 const inName = (h, t) => core.norm(h).includes(core.norm(t).slice(0, 24));
 
 (async () => {
-  if (TEST_EMAIL) { await sendEmail('Rate Watch test', '<p>Test email from Booking rate watch.</p>'); return; }
+  if (TEST_EMAIL) { await sendEmail('Price Watch test', '<p>Test email from Booking rate watch.</p>'); return; }
 
   const runCfg = { ...cfg, city };
   console.error(`SCRAPE city=${city} checkDates=${runCfg.checkDates || 1} mode=${MOBILE ? 'mobile' : 'desktop'}`);
@@ -108,6 +108,6 @@ const inName = (h, t) => core.norm(h).includes(core.norm(t).slice(0, 24));
 
   const undCount = reports.filter(x => x.undercut.length).length;
   const firstMine = reports[0].mine;
-  const subj = `[RateWatch] ${city} ${reports[0].checkin}→${reports[reports.length - 1].checkout} · you ${firstMine ? '$' + firstMine.priceUSD : 'n/a'}${undCount ? ' ⚠' : ''}`;
+  const subj = `[PriceWatch] ${city} ${reports[0].checkin}→${reports[reports.length - 1].checkout} · you ${firstMine ? '$' + firstMine.priceUSD : 'n/a'}${undCount ? ' ⚠' : ''}`;
   await sendEmail(subj, renderEmailHtml(runCfg, reports));
 })().catch(e => { console.error('FATAL:', e.message); process.exit(/CAPTCHA/.test(e.message) ? 2 : 1); });

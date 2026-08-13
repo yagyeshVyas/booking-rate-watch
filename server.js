@@ -1,8 +1,8 @@
-// server.js — Booking Rate Watch dashboard backend (local, 127.0.0.1)
+// server.js — Price Watch dashboard backend (local, 127.0.0.1)
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
-const core = require('./ratewatch-core.js');
+const core = require('./watch-core.js');
 
 const ROOT = __dirname;
 const CONFIG_FILE = path.join(ROOT, 'config.json');
@@ -103,7 +103,7 @@ app.post('/api/test-email', async (req, res) => {
     const c = cfg();
     const nodemailer = require('nodemailer');
     const t = nodemailer.createTransport({ host: 'smtp.gmail.com', port: 465, secure: true, auth: { user: s.gmailUser, pass: s.gmailAppPass } });
-    await t.sendMail({ from: `"Rate Watch" <${s.gmailUser}>`, to: s.emailTo, subject: 'Rate Watch — test email', text: `Test OK. Dashboard configured for ${c.city}, ${c.nights} night(s), ${c.adults} adults, mobile=${c.mobile}.` });
+    await t.sendMail({ from: `"Price Watch" <${s.gmailUser}>`, to: s.emailTo, subject: 'Price Watch — test email', text: `Test OK. Dashboard configured for ${c.city}, ${c.nights} night(s), ${c.adults} adults, mobile=${c.mobile}.` });
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
@@ -155,7 +155,7 @@ function renderEmailHtml(c, runs) {
 
   return `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f7f6f2;font-family:Segoe UI,Arial,sans-serif">
 <div style="background:#141414;padding:22px 30px">
-  <div style="font-size:20px;font-weight:700;color:#d4af37">Rate Watch</div>
+  <div style="font-size:20px;font-weight:700;color:#d4af37">Price Watch</div>
   <div style="font-size:12px;color:#999;margin-top:2px">Booking.com mobile rates · ${esc(c.city)}</div>
 </div>
 <div style="padding:24px 30px;background:#fff;max-width:640px;margin:0 auto">
@@ -214,8 +214,8 @@ app.post('/api/run', async (req, res) => {
         const t = nodemailer.createTransport({ host: 'smtp.gmail.com', port: 465, secure: true, auth: { user: s.gmailUser, pass: s.gmailAppPass } });
         const undCount = reports.filter(x => x.undercut.length).length;
         const firstMine = reports[0].mine;
-        const subj = `[RateWatch] ${c.city} ${reports[0].checkin}→${reports[reports.length - 1].checkout} · you ${firstMine ? '$' + firstMine.priceUSD : 'n/a'}${undCount ? ' ⚠' : ''}`;
-        await t.sendMail({ from: `"Rate Watch" <${s.gmailUser}>`, to: s.emailTo, subject: subj, html: renderEmailHtml(c, reports) });
+        const subj = `[PriceWatch] ${c.city} ${reports[0].checkin}→${reports[reports.length - 1].checkout} · you ${firstMine ? '$' + firstMine.priceUSD : 'n/a'}${undCount ? ' ⚠' : ''}`;
+        await t.sendMail({ from: `"Price Watch" <${s.gmailUser}>`, to: s.emailTo, subject: subj, html: renderEmailHtml(c, reports) });
         emailed = true;
       } catch (e) { console.error('EMAIL_FAIL:', e.message); }
     }
@@ -297,4 +297,4 @@ app.get('/api/status', (req, res) => {
 });
 
 const PORT = process.env.PORT || 5180;
-app.listen(PORT, '127.0.0.1', () => console.log(`Rate Watch dashboard: http://127.0.0.1:${PORT}`));
+app.listen(PORT, '127.0.0.1', () => console.log(`Price Watch dashboard: http://127.0.0.1:${PORT}`));

@@ -1,9 +1,9 @@
 @echo off
 setlocal
-title Rate Watch Dashboard
+title Price Watch Dashboard
 cd /d "%~dp0"
 echo ============================================
-echo   Rate Watch - Booking Mobile Rate Dashboard
+echo   Price Watch - Booking Mobile Rate Dashboard
 echo ============================================
 echo.
 if not exist node_modules (
