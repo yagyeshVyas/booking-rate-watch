@@ -14,7 +14,5 @@
   "stealth": true,
   "checkDates": 10,
   "startDaysFromToday": 10,
-  "endDaysFromToday": 19,
-  "startDate": "2026-08-23",
-  "endDate": "2026-09-01"
+  "endDaysFromToday": 19
 }

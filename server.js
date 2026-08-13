@@ -76,6 +76,10 @@ app.post('/api/config', (req, res) => {
   next.endDaysFromToday = e;
   next.offsetDays = s;
   next.checkDates = e - s + 1;
+  // privacy: never persist personal email or derived date fields into config.json
+  delete next.email;
+  delete next.startDate;
+  delete next.endDate;
   writeJson(CONFIG_FILE, next);
   res.json({ ok: true, config: next });
 });

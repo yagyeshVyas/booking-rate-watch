@@ -53,8 +53,17 @@ function renderEmailHtml(c, runs) {
 }
 
 async function sendEmail(subject, html) {
-  const user = process.env.GMAIL_USER, pass = process.env.GMAIL_APP_PASS, to = process.env.EMAIL_TO || cfg.email?.to;
-  if (!user || !pass || !to) { console.log('EMAIL_SKIPPED (set GMAIL_USER, GMAIL_APP_PASS, EMAIL_TO)'); return false; }
+  // email config comes from env (GitHub secrets) or the dashboard's local secrets file — NEVER from config.json
+  let to = process.env.EMAIL_TO || null;
+  let user = process.env.GMAIL_USER || null;
+  let pass = process.env.GMAIL_APP_PASS || null;
+  if (!to || !user || !pass) {
+    try {
+      const s = JSON.parse(fs.readFileSync(path.join(__dirname, 'secrets.local.json'), 'utf8'));
+      to = to || s.emailTo || null; user = user || s.gmailUser || null; pass = pass || s.gmailAppPass || null;
+    } catch (e) {}
+  }
+  if (!user || !pass || !to) { console.log('EMAIL_SKIPPED (set GMAIL_USER, GMAIL_APP_PASS, EMAIL_TO or configure email in the dashboard)'); return false; }
   const nodemailer = require('nodemailer');
   const t = nodemailer.createTransport({ host: 'smtp.gmail.com', port: 465, secure: true, auth: { user, pass } });
   await t.sendMail({ from: `"Rate Watch" <${user}>`, to, subject, html });

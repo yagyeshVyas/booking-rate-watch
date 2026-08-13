@@ -31,17 +31,18 @@ Email credentials are stored in `secrets.local.json` (gitignored — never commi
 ### 1. Edit `config.json`
 ```json
 {
-  "city": "Miami Beach",
+  "city": "Manteo",
   "country": "us",
-  "offsetDays": 1,
+  "startDaysFromToday": 10,
+  "endDaysFromToday": 19,
   "nights": 1,
   "adults": 2,
-  "myProperty": "Sherry Frontenac Oceanfront",
-  "competitors": ["Shelley Hotel", "Hotel Chelsea"],
-  "email": { "to": "you@gmail.com" }
+  "myProperty": "Your Hotel Name",
+  "competitors": ["Competitor A", "Competitor B"]
 }
 ```
-`offsetDays: 1` = always checks tomorrow's rate (rolling). Set `0` for today.
+- `startDaysFromToday` / `endDaysFromToday` = rolling window (auto-updates with today).
+- **Your email NEVER lives in config.json** — set it in the dashboard (Settings tab); it's stored in `secrets.local.json` (gitignored, never pushed) or as GitHub secrets.
 
 ### 2. Create a Gmail app password (free)
 1. Go to https://myaccount.google.com/apppasswords (must have 2-Step Verification on)
