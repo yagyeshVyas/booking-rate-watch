@@ -60,3 +60,15 @@
 {"at":"2026-08-13T21:27:24.972Z","city":"Manteo","checkin":"2026-09-01","checkout":"2026-09-02","mode":"mobile","mine":{"name":"Heart of Manteo","price":58},"competitors":[{"name":"Scarborough Inn","price":91},{"name":"Hotel Manteo, Trademark Collection by Wyndham","price":101}]}
 {"at":"2026-08-13T21:35:53.605Z","city":"Manteo","checkin":"2026-08-16","checkout":"2026-08-17","mode":"mobile","mine":{"name":"Heart of Manteo","price":68},"competitors":[{"name":"Hotel Manteo, Trademark Collection by Wyndham","price":97},{"name":"Scarborough Inn","price":103}]}
 {"at":"2026-08-13T21:35:53.605Z","city":"Manteo","checkin":"2026-08-17","checkout":"2026-08-18","mode":"mobile","mine":{"name":"Heart of Manteo","price":68},"competitors":[{"name":"Hotel Manteo, Trademark Collection by Wyndham","price":100},{"name":"Scarborough Inn","price":114}]}
+{"at":"2026-08-13T21:38:44.581Z","city":"Manteo","checkin":"2026-08-23","checkout":"2026-08-24","mode":"mobile","mine":{"name":"Heart of Manteo","price":68},"competitors":[{"name":"Scarborough Inn","price":91},{"name":"Hotel Manteo, Trademark Collection by Wyndham","price":101}]}
+{"at":"2026-08-13T21:39:28.681Z","city":"Manteo","checkin":"2026-08-23","checkout":"2026-08-24","mode":"mobile","mine":{"name":"Heart of Manteo","price":68},"competitors":[]}
+{"at":"2026-08-13T21:40:21.165Z","city":"Manteo","checkin":"2026-08-23","checkout":"2026-08-24","mode":"mobile","mine":{"name":"Heart of Manteo","price":68},"competitors":[]}
+{"at":"2026-08-13T23:18:18.543Z","city":"Manteo","checkin":"2026-08-15","checkout":"2026-08-16","mode":"mobile","mine":{"name":"Heart of Manteo","price":157},"competitors":[]}
+{"at":"2026-08-13T23:18:18.543Z","city":"Manteo","checkin":"2026-08-16","checkout":"2026-08-17","mode":"mobile","mine":{"name":"Heart of Manteo","price":68},"competitors":[]}
+{"at":"2026-08-13T23:18:52.000Z","city":"Manteo","checkin":"2026-08-15","checkout":"2026-08-16","mode":"mobile","mine":{"name":"Heart of Manteo","price":157},"competitors":[]}
+{"at":"2026-08-13T23:18:52.001Z","city":"Manteo","checkin":"2026-08-16","checkout":"2026-08-17","mode":"mobile","mine":{"name":"Heart of Manteo","price":68},"competitors":[]}
+{"at":"2026-08-13T23:19:30.764Z","city":"Las Vegas","checkin":"2026-08-27","checkout":"2026-08-28","mode":"mobile","mine":null,"competitors":[]}
+{"at":"2026-08-13T23:20:17.066Z","city":"Miami Beach","checkin":"2026-08-15","checkout":"2026-08-16","mode":"mobile","mine":null,"competitors":[]}
+{"at":"2026-08-13T23:21:18.027Z","city":"Miami Beach","checkin":"2026-08-16","checkout":"2026-08-17","mode":"mobile","mine":null,"competitors":[]}
+{"at":"2026-08-13T23:21:56.921Z","city":"Miami Beach","checkin":"2026-08-14","checkout":"2026-08-15","mode":"mobile","mine":null,"competitors":[]}
+{"at":"2026-08-13T23:22:24.744Z","city":"Miami Beach","checkin":"2026-09-17","checkout":"2026-09-18","mode":"mobile","mine":null,"competitors":[]}

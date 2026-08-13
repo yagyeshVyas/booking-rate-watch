@@ -133,16 +133,19 @@ function renderEmailHtml(c, runs) {
 
   let listSection = '';
   if (!hasComps) {
-    const all = runs[0].hotels.slice(0, 25);
+    const cap = 60;
+    const all = runs[0].hotels.slice(0, cap);
+    const more = runs[0].hotels.length - all.length;
     const li = all.map((h, i) => `<tr>
       <td style="padding:7px 12px;border-bottom:1px solid #f2f2f2;color:#888">${i + 1}</td>
       <td style="padding:7px 12px;border-bottom:1px solid #f2f2f2">${esc(h.name)}${h.url ? ` <a href="${h.url}" style="color:#2980b9;font-size:11px">view</a>` : ''}</td>
       <td style="padding:7px 12px;border-bottom:1px solid #f2f2f2"><b>$${h.priceUSD}</b></td>
       <td style="padding:7px 12px;border-bottom:1px solid #f2f2f2;color:#888">${esc(h.score || '')}</td>
     </tr>`).join('');
-    listSection = `<h2 style="font-size:15px;color:#333;margin:26px 0 10px">All properties in ${esc(c.city)} — cheapest first (${runs[0].hotels.length} found${all.length < runs[0].hotels.length ? ', showing top ' + all.length : ''})</h2>
+    listSection = `<h2 style="font-size:15px;color:#333;margin:26px 0 10px">All properties in ${esc(c.city)} — cheapest first (${runs[0].hotels.length} found${more > 0 ? ', showing cheapest ' + cap : ''})</h2>
     <table style="border-collapse:collapse;width:100%;font-size:13px"><tr style="color:#888;text-align:left;font-size:11px;text-transform:uppercase"><th style="padding:6px 12px;border-bottom:2px solid #eee">#</th><th style="padding:6px 12px;border-bottom:2px solid #eee">Property</th><th style="padding:6px 12px;border-bottom:2px solid #eee">Price / night</th><th style="padding:6px 12px;border-bottom:2px solid #eee">Score</th></tr>${li}</table>
-    <p style="color:#888;font-size:12px;margin-top:6px">Prices are the cheapest available rate for 1 room · ${c.adults} adults, as shown on Booking's mobile site for ${runs[0].checkin} → ${runs[0].checkout}.</p>`;
+    ${more > 0 ? `<p style="color:#888;font-size:12px;margin-top:6px">… and ${more} more (full list is in the dashboard).</p>` : ''}
+    <p style="color:#888;font-size:12px;margin-top:6px">Full market scan — every page of ${esc(c.city)} crawled. Prices are the cheapest available rate for 1 room · ${c.adults} adults, as shown on Booking's mobile site for ${runs[0].checkin} → ${runs[0].checkout}.</p>`;
   } else {
     listSection = `<h2 style="font-size:15px;color:#333;margin:26px 0 10px">Tracked competitors — ${esc(c.city)}</h2>
     <p style="color:#888;font-size:13px">${(c.competitors || []).map(esc).join(' · ')}</p>
@@ -180,8 +183,8 @@ app.post('/api/run', async (req, res) => {
   running = true;
   try {
     const c = cfg();
-    const r = await core.scrape(c, { mobile: c.mobile !== false, stealth: c.stealth !== false, checkDates: c.checkDates });
     const hasComps = (c.competitors || []).length > 0;
+    const r = await core.scrape(c, { mobile: c.mobile !== false, stealth: c.stealth !== false, checkDates: c.checkDates, fullScan: !hasComps });
 
     const reports = r.dateRuns.map(dr => {
       const found = {}, notFound = [];

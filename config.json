@@ -5,14 +5,12 @@
   "nights": 1,
   "adults": 2,
   "myProperty": "Heart of manteo",
-  "competitors": [
-    "Hotel Manteo, Trademark Collection by Wyndham",
-    "Scarborough Inn"
-  ],
+  "competitors": [],
   "currency": "USD",
   "mobile": true,
   "stealth": true,
-  "checkDates": 10,
+  "checkDates": 1,
   "startDaysFromToday": 10,
-  "endDaysFromToday": 19
+  "endDaysFromToday": 10,
+  "fullScan": true
 }

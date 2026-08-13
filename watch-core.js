@@ -219,6 +219,9 @@ async function scrape(cfg, opts = {}) {
 
       const dateRuns = [];
       const targets = [cfg.myProperty, ...(cfg.competitors || [])];
+      const fullScan = opts.fullScan === true; // no competitors → crawl the whole place
+      const maxScanPages = Math.max(2, Math.min(25, parseInt(cfg.maxScanPages || 12, 10)));
+      let fullScanPages = 0;
       for (let di = 0; di < pairs.length; di++) {
         const p = pairs[di];
         const q = new URLSearchParams({
@@ -227,34 +230,51 @@ async function scrape(cfg, opts = {}) {
           checkin: p.checkin, checkout: p.checkout, group_adults: String(adults), no_rooms: '1', group_children: '0',
           selected_currency: cfg.currency || 'USD',
         });
+        if (fullScan && di === 0) q.set('order', 'bayesian_review_score'); // default stable sort — mobile paginates reliably on it
         if (sess.aid) q.set('aid', sess.aid);
         if (sess.label) q.set('label', sess.label);
         if (sess.sid) q.set('sid', sess.sid);
-        await page.goto(`https://www.booking.com/searchresults.html?${q.toString()}`, { waitUntil: 'domcontentloaded', timeout: 60000 });
-        try { await page.locator('#onetrust-accept-btn-handler').first().click({ timeout: 5000, force: true }); } catch (e) {}
 
-        try {
-          await page.waitForSelector('[data-testid="property-card"]', { timeout: 25000 });
-        } catch (e) {
-          const body = await page.evaluate(() => document.body.innerText.slice(0, 300));
-          if (/captcha|are you human|unusual traffic/i.test(body)) throw new Error('CAPTCHA_BLOCKED');
-          throw new Error('NO_CARDS: ' + body.slice(0, 120));
-        }
+        const loadPage = async (offset) => {
+          const u = `https://www.booking.com/searchresults.html?${q.toString()}${offset ? '&offset=' + offset : ''}`;
+          await page.goto(u, { waitUntil: 'domcontentloaded', timeout: 60000 });
+          try { await page.locator('#onetrust-accept-btn-handler').first().click({ timeout: 5000, force: true }); } catch (e) {}
+          try {
+            await page.waitForSelector('[data-testid="property-card"]', { timeout: 25000 });
+          } catch (e) {
+            const body = await page.evaluate(() => document.body.innerText.slice(0, 300));
+            if (/captcha|are you human|unusual traffic/i.test(body)) throw new Error('CAPTCHA_BLOCKED');
+            throw new Error('NO_CARDS: ' + body.slice(0, 120));
+          }
+          let hotels = [];
+          for (let i = 0; i < 6 && hotels.length === 0; i++) { await sleep(2000); hotels = await page.evaluate(extractPage); }
+          if (hotels.length === 0 && offset === 0) throw new Error('PRICES_NOT_RENDERED');
+          return hotels;
+        };
+
         let hotels = [];
-        for (let i = 0; i < 6 && hotels.length === 0; i++) { await sleep(2000); hotels = await page.evaluate(extractPage); }
-        if (hotels.length === 0) throw new Error('PRICES_NOT_RENDERED');
-
-        // page 2 (first date only) if some targets still missing
-        if (di === 0) {
-          const stillMissing = targets.filter(t => !hotels.some(h => inName(h.name, t)));
-          if (stillMissing.length > 0) {
-            try {
-              const url2 = `https://www.booking.com/searchresults.html?${q.toString()}&offset=25`;
-              await page.goto(url2, { waitUntil: 'domcontentloaded', timeout: 60000 });
-              await sleep(4000);
-              const page2 = await page.evaluate(extractPage);
-              for (const h of page2) { if (!hotels.some(m => norm(m.name) === norm(h.name))) hotels.push(h); }
-            } catch (e) {}
+        if (fullScan && di === 0) {
+          // FULL MARKET CRAWL: every page of results for the first date
+          const seen = new Set();
+          for (let pg = 0; pg < maxScanPages; pg++) {
+            const batch = await loadPage(pg * 25);
+            const fresh = batch.filter(h => !seen.has(norm(h.name)));
+            for (const h of fresh) seen.add(norm(h.name));
+            hotels.push(...fresh);
+            fullScanPages = pg + 1;
+            if (batch.length < 25 || fresh.length === 0) break; // last page
+            await sleep(2000); // polite gap between pages
+          }
+        } else {
+          hotels = await loadPage(0);
+          if (di === 0) {
+            const stillMissing = targets.filter(t => !hotels.some(h => inName(h.name, t)));
+            if (stillMissing.length > 0) {
+              try {
+                const page2 = await loadPage(25);
+                for (const h of page2) { if (!hotels.some(m => norm(m.name) === norm(h.name))) hotels.push(h); }
+              } catch (e) {}
+            }
           }
         }
         dateRuns.push({ checkin: p.checkin, checkout: p.checkout, hotels });
@@ -263,7 +283,7 @@ async function scrape(cfg, opts = {}) {
 
       await saveState(context); // refresh session cookies
       await browser.close();
-      return { dateRuns, dest, mode: mobile ? 'mobile' : 'desktop', nights, adults, checkDates };
+      return { dateRuns, dest, mode: mobile ? 'mobile' : 'desktop', nights, adults, checkDates, fullScanPages };
     } catch (e) {
       lastErr = e;
       if (browser) await browser.close().catch(() => {});

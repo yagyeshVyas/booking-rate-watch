@@ -30,9 +30,11 @@ function renderEmailHtml(c, runs) {
   }
   let listSection = '';
   if (!hasComps) {
-    const all = runs[0].hotels.slice(0, 25);
+    const cap = 60;
+    const all = runs[0].hotels.slice(0, cap);
+    const more = runs[0].hotels.length - all.length;
     const li = all.map((h, i) => `<tr><td style="padding:7px 12px;border-bottom:1px solid #f2f2f2;color:#888">${i + 1}</td><td style="padding:7px 12px;border-bottom:1px solid #f2f2f2">${esc(h.name)}${h.url ? ` <a href="${h.url}" style="color:#2980b9;font-size:11px">view</a>` : ''}</td><td style="padding:7px 12px;border-bottom:1px solid #f2f2f2"><b>$${h.priceUSD}</b></td><td style="padding:7px 12px;border-bottom:1px solid #f2f2f2;color:#888">${esc(h.score || '')}</td></tr>`).join('');
-    listSection = `<h2 style="font-size:15px;color:#333;margin:26px 0 10px">All properties in ${esc(c.city)} — cheapest first (${runs[0].hotels.length} found${all.length < runs[0].hotels.length ? ', showing top ' + all.length : ''})</h2><table style="border-collapse:collapse;width:100%;font-size:13px"><tr style="color:#888;text-align:left;font-size:11px;text-transform:uppercase"><th style="padding:6px 12px;border-bottom:2px solid #eee">#</th><th style="padding:6px 12px;border-bottom:2px solid #eee">Property</th><th style="padding:6px 12px;border-bottom:2px solid #eee">Price / night</th><th style="padding:6px 12px;border-bottom:2px solid #eee">Score</th></tr>${li}</table><p style="color:#888;font-size:12px;margin-top:6px">Prices are the cheapest available rate for 1 room · ${c.adults} adults, as shown on Booking's mobile site for ${runs[0].checkin} → ${runs[0].checkout}.</p>`;
+    listSection = `<h2 style="font-size:15px;color:#333;margin:26px 0 10px">All properties in ${esc(c.city)} — cheapest first (${runs[0].hotels.length} found${more > 0 ? ', showing cheapest ' + cap : ''})</h2><table style="border-collapse:collapse;width:100%;font-size:13px"><tr style="color:#888;text-align:left;font-size:11px;text-transform:uppercase"><th style="padding:6px 12px;border-bottom:2px solid #eee">#</th><th style="padding:6px 12px;border-bottom:2px solid #eee">Property</th><th style="padding:6px 12px;border-bottom:2px solid #eee">Price / night</th><th style="padding:6px 12px;border-bottom:2px solid #eee">Score</th></tr>${li}</table>${more > 0 ? `<p style="color:#888;font-size:12px;margin-top:6px">… and ${more} more (full list is in the dashboard).</p>` : ''}<p style="color:#888;font-size:12px;margin-top:6px">Full market scan — every page of ${esc(c.city)} crawled. Prices are the cheapest available rate for 1 room · ${c.adults} adults, as shown on Booking's mobile site for ${runs[0].checkin} → ${runs[0].checkout}.</p>`;
   } else {
     listSection = `<h2 style="font-size:15px;color:#333;margin:26px 0 10px">Tracked competitors — ${esc(c.city)}</h2><p style="color:#888;font-size:13px">${(c.competitors || []).map(esc).join(' · ')}</p><p style="color:#888;font-size:12px;margin-top:10px">Date-by-date rates in the table above.</p>`;
   }
@@ -77,10 +79,10 @@ const inName = (h, t) => core.norm(h).includes(core.norm(t).slice(0, 24));
   if (TEST_EMAIL) { await sendEmail('Price Watch test', '<p>Test email from Booking rate watch.</p>'); return; }
 
   const runCfg = { ...cfg, city };
-  console.error(`SCRAPE city=${city} checkDates=${runCfg.checkDates || 1} mode=${MOBILE ? 'mobile' : 'desktop'}`);
-  const r = await core.scrape(runCfg, { mobile: MOBILE });
-
   const hasComps = (cfg.competitors || []).length > 0;
+  console.error(`SCRAPE city=${city} checkDates=${runCfg.checkDates || 1} mode=${MOBILE ? 'mobile' : 'desktop'} fullScan=${!hasComps}`);
+  const r = await core.scrape(runCfg, { mobile: MOBILE, fullScan: !hasComps });
+
   const reports = r.dateRuns.map(dr => {
     const found = {}, notFound = [];
     for (const t of [cfg.myProperty, ...(cfg.competitors || [])]) {
@@ -101,7 +103,7 @@ const inName = (h, t) => core.norm(h).includes(core.norm(t).slice(0, 24));
   }
 
   console.log(JSON.stringify({
-    mode: r.mode, city, checkDates: r.checkDates, dest_id: r.dest,
+    mode: r.mode, city, checkDates: r.checkDates, fullScanPages: r.fullScanPages || 0, dest_id: r.dest,
     reports: reports.map(x => ({ checkin: x.checkin, checkout: x.checkout, totalHotelsOnPage: x.hotels.length, my: x.mine, competitors: x.competitors, notFound: x.notFound, undercut: x.undercut.map(c => c.name) })),
     fullList: !hasComps,
   }, null, 2));

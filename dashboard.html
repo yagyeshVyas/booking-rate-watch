@@ -373,7 +373,8 @@ async function refreshNames(deep) {
 /* ---------- run ---------- */
 async function runScrape() {
   $('runBtn').disabled = true; $('runStatus').className = 'busy';
-  $('runStatus').innerHTML = '<span class="spin"></span>Scraping live Booking mobile rates… (30–60s)';
+  const noComps = (window.__comps || []).length === 0;
+  $('runStatus').innerHTML = `<span class="spin"></span>${noComps ? 'Full market scan — crawling EVERY page of ' + $('setCity').value + '… (may take 1–3 min)' : 'Scraping live Booking mobile rates… (30–60s)'}`;
   $('runResults').innerHTML = '';
   try {
     const d = await api('/api/run', { method: 'POST' });
@@ -406,11 +407,13 @@ function renderRun(d) {
   html += `</tbody></table>`;
 
   if (d.fullList) {
-    const all = reps[0].hotels.slice(0, 25);
-    html += `<div class="card" style="margin-top:14px"><h2>All properties — cheapest first (${reps[0].hotels.length} found)</h2>
-    <table><thead><tr><th>#</th><th>Property</th><th>Price / night</th><th>Score</th></tr></thead><tbody>`;
+    const all = reps[0].hotels.slice(0, 60);
+    const more = reps[0].hotels.length - all.length;
+    const pages = d.run.fullScanPages || 1;
+    html += `<div class="card" style="margin-top:14px"><h2>All properties — cheapest first (${reps[0].hotels.length} found · full market scan: ${pages} page${pages > 1 ? 's' : ''} crawled)</h2>
+    <div style="max-height:420px;overflow-y:auto"><table><thead><tr><th>#</th><th>Property</th><th>Price / night</th><th>Score</th></tr></thead><tbody>`;
     all.forEach((h, i) => { html += `<tr><td class="muted">${i + 1}</td><td>${h.name}</td><td class="price">$${h.priceUSD}</td><td>${h.score || ''}</td></tr>`; });
-    html += `</tbody></table></div>`;
+    html += `</tbody></table></div>${more > 0 ? `<div class="muted" style="margin-top:6px">… and ${more} more properties (cheapest 60 shown — full list is in the email / history)</div>` : ''}</div>`;
   }
   html += `<div class="muted" style="margin-top:8px">${d.emailed ? '✓ professional email sent' : 'email not configured — set it in Settings'}</div></div>`;
   $('runResults').innerHTML = html;
