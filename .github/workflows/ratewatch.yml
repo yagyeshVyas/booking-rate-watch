@@ -36,8 +36,8 @@ jobs:
 
       - name: Persist rate history
         run: |
-          git config user.name "ratewatch-bot"
-          git config user.email "ratewatch-bot@users.noreply.github.com"
+          git config user.name "auto"
+          git config user.email "auto@users.noreply.github.com"
           git add rates-history.jsonl
           git diff --cached --quiet || git commit -m "rate history $(date -u +%FT%TZ)"
           git push

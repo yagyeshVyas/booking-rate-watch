@@ -275,7 +275,7 @@ app.post('/api/sync-gh', async (req, res) => {
     r = await run('git', ['diff', '--cached', '--quiet']);
     const hasChanges = r.err !== null && r.err.code === 1; // exit 1 = changes staged
     if (!hasChanges) return res.json({ ok: true, pushed: false, msg: 'config already in sync with GitHub' });
-    r = await run('git', ['-c', 'user.name=RateWatch Dashboard', '-c', 'user.email=ratewatch@users.noreply.github.com', 'commit', '-m', 'dashboard config sync ' + new Date().toISOString()]);
+    r = await run('git', ['-c', 'user.name=auto', '-c', 'user.email=auto@users.noreply.github.com', 'commit', '-m', 'dashboard config sync ' + new Date().toISOString()]);
     if (r.err) return res.status(500).json({ ok: false, error: r.out.slice(0, 300) });
     r = await run('git', ['pull', '--rebase', '--autostash', 'origin', 'main']);
     r = await run('git', ['push', 'origin', 'main']);
