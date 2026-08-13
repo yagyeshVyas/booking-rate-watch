@@ -1,9 +1,24 @@
-# Booking Rate Watch — free mobile-rate competitor tracker
+# Booking Rate Watch — free mobile-rate competitor tracker + dashboard
 
 Scrapes **Booking.com mobile rates** for your property + competitors and **emails you every 5 hours**.
 100% free: Playwright (scraper) + Gmail SMTP app password (email) + GitHub Actions cron (runs online, 24/7).
+Includes a **local management dashboard** where you control everything visually.
 
-## How it works
+## 🖥 The dashboard (manage everything visually)
+
+Double-click **`start.bat`** → opens `http://127.0.0.1:5180`
+
+| Tab | What you manage |
+|---|---|
+| **Overview** | Stats, last run, quick actions |
+| **Settings** | 📧 email (from / app password / to) · 📍 city + country + currency · dates (days ahead + nights + adults) · 🛡 mobile-only toggle + stealth toggle |
+| **Properties** | Your property + competitors with **live autocomplete** — type a letter and matching Booking property names appear instantly (index built from Booking's own pages for your city) |
+| **Run & Results** | One-click live scrape → table: your price, each competitor, delta vs you, ⚠ undercut alerts |
+| **History** | Price trend chart (you vs each competitor) + every run logged to `rates-history.jsonl` |
+
+Email credentials are stored in `secrets.local.json` (gitignored — never committed).
+
+## How the 5-hour email works
 
 1. GitHub Actions runs `ratewatch.js` every 5 hours on a free Ubuntu runner.
 2. The script opens Booking with a **mobile (Android) browser profile** → mobile-only rates.

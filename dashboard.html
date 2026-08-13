@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rate Watch — Booking Mobile Rates</title>
+<style>
+  :root {
+    --ink: #0d0d0f; --ink2: #141418; --card: #1a1a20; --line: #2a2a33;
+    --gold: #d4af37; --gold-soft: #e8c96a; --gold-dim: #8a7428;
+    --txt: #e8e6df; --mut: #9a968c; --ok: #4caf7d; --warn: #e05d4d; --blue: #5b8def;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--ink); color: var(--txt); font-family: "Segoe UI", system-ui, sans-serif; min-height: 100vh; }
+  .app { display: flex; min-height: 100vh; }
+  /* ---- sidebar ---- */
+  .side { width: 220px; background: var(--ink2); border-right: 1px solid var(--line); padding: 22px 14px; position: sticky; top: 0; height: 100vh; }
+  .logo { font-size: 18px; font-weight: 700; color: var(--gold); letter-spacing: .5px; padding: 0 8px 18px; border-bottom: 1px solid var(--line); margin-bottom: 14px; }
+  .logo small { display: block; color: var(--mut); font-weight: 400; font-size: 11px; margin-top: 3px; letter-spacing: 1.5px; text-transform: uppercase; }
+  .nav button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 11px 12px; margin: 3px 0; background: none; border: 1px solid transparent; border-radius: 8px; color: var(--mut); font-size: 14px; cursor: pointer; text-align: left; transition: all .15s; }
+  .nav button:hover { color: var(--txt); background: var(--card); }
+  .nav button.active { color: var(--gold); background: var(--card); border-color: var(--gold-dim); }
+  .nav .ico { width: 18px; text-align: center; font-size: 15px; }
+  .side .foot { position: absolute; bottom: 18px; left: 14px; right: 14px; font-size: 11px; color: var(--mut); line-height: 1.6; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+  .dot.on { background: var(--ok); } .dot.off { background: var(--warn); } .dot.warm { background: var(--gold); }
+  /* ---- main ---- */
+  .main { flex: 1; padding: 28px 34px; max-width: 1080px; }
+  h1 { font-size: 22px; font-weight: 600; color: var(--gold-soft); margin-bottom: 4px; }
+  .sub { color: var(--mut); font-size: 13px; margin-bottom: 26px; }
+  .view { display: none; } .view.active { display: block; animation: fade .18s ease; }
+  @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px 22px; margin-bottom: 18px; }
+  .card h2 { font-size: 14px; font-weight: 600; color: var(--gold); text-transform: uppercase; letter-spacing: 1.2px; margin-bottom: 14px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+  label { display: block; font-size: 12px; color: var(--mut); margin: 10px 0 5px; letter-spacing: .4px; }
+  input[type=text], input[type=password], input[type=number], input[type=email], select {
+    width: 100%; background: var(--ink); border: 1px solid var(--line); color: var(--txt);
+    padding: 9px 12px; border-radius: 8px; font-size: 14px; outline: none; transition: border .15s;
+  }
+  input:focus, select:focus { border-color: var(--gold-dim); }
+  .btn { background: var(--gold); color: #141414; border: none; padding: 10px 20px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; transition: filter .15s, transform .05s; }
+  .btn:hover { filter: brightness(1.08); } .btn:active { transform: translateY(1px); }
+  .btn.ghost { background: transparent; border: 1px solid var(--line); color: var(--txt); }
+  .btn.ghost:hover { border-color: var(--gold-dim); color: var(--gold-soft); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn.small { padding: 6px 12px; font-size: 12px; }
+  /* autocomplete */
+  .ac { position: relative; }
+  .ac-list { position: absolute; top: 42px; left: 0; right: 0; background: var(--ink2); border: 1px solid var(--line); border-radius: 10px; max-height: 260px; overflow-y: auto; z-index: 50; box-shadow: 0 12px 30px rgba(0,0,0,.5); }
+  .ac-item { padding: 9px 14px; font-size: 13.5px; cursor: pointer; color: var(--txt); display: flex; justify-content: space-between; gap: 8px; }
+  .ac-item:hover { background: var(--card); color: var(--gold-soft); }
+  .ac-item .m { color: var(--gold-dim); font-size: 11px; white-space: nowrap; }
+  .ac-hint { font-size: 11px; color: var(--mut); margin-top: 5px; }
+  .chip-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .chip { background: var(--ink); border: 1px solid var(--gold-dim); color: var(--gold-soft); border-radius: 20px; padding: 5px 12px; font-size: 12.5px; display: inline-flex; align-items: center; gap: 7px; }
+  .chip button { background: none; border: none; color: var(--warn); cursor: pointer; font-size: 13px; padding: 0 2px; }
+  /* toggle */
+  .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px dashed var(--line); }
+  .toggle-row:last-child { border-bottom: none; }
+  .toggle-row .t-label { font-size: 13.5px; } .toggle-row .t-sub { font-size: 11.5px; color: var(--mut); margin-top: 2px; }
+  .switch { position: relative; width: 42px; height: 23px; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .sl { position: absolute; inset: 0; background: #33333c; border-radius: 20px; cursor: pointer; transition: .2s; }
+  .sl:before { content: ""; position: absolute; width: 17px; height: 17px; border-radius: 50%; background: #ddd; top: 3px; left: 3px; transition: .2s; }
+  .switch input:checked + .sl { background: var(--gold-dim); }
+  .switch input:checked + .sl:before { transform: translateX(19px); background: var(--gold-soft); }
+  /* results */
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th { text-align: left; color: var(--mut); font-weight: 500; font-size: 11.5px; text-transform: uppercase; letter-spacing: .8px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  td { padding: 10px; border-bottom: 1px solid #22222a; }
+  tr.me td { background: rgba(212,175,55,.07); }
+  .price { font-weight: 700; color: var(--gold-soft); font-size: 15px; }
+  .delta-ok { color: var(--ok); } .delta-bad { color: var(--warn); font-weight: 600; }
+  .badge { display: inline-block; padding: 2px 9px; border-radius: 12px; font-size: 11px; font-weight: 600; }
+  .badge.warn { background: rgba(224,93,77,.15); color: var(--warn); }
+  .badge.ok { background: rgba(76,175,125,.15); color: var(--ok); }
+  .badge.mut { background: #26262e; color: var(--mut); }
+  .alert-box { border-left: 3px solid var(--warn); background: rgba(224,93,77,.08); padding: 12px 16px; border-radius: 8px; margin-bottom: 14px; font-size: 13.5px; }
+  .ok-box { border-left: 3px solid var(--ok); background: rgba(76,175,125,.07); padding: 12px 16px; border-radius: 8px; margin-bottom: 14px; font-size: 13.5px; }
+  .muted { color: var(--mut); font-size: 12.5px; }
+  .row-actions { display: flex; gap: 10px; margin-top: 16px; align-items: center; }
+  #runStatus { font-size: 13px; color: var(--mut); }
+  #runStatus.busy { color: var(--gold-soft); }
+  /* chart */
+  canvas { width: 100%; height: 260px; display: block; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 8px; font-size: 12px; color: var(--mut); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .sw { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+  .spin { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--gold-dim); border-top-color: var(--gold-soft); border-radius: 50%; animation: rot .7s linear infinite; vertical-align: -2px; margin-right: 8px; }
+  @keyframes rot { to { transform: rotate(360deg); } }
+  .toast { position: fixed; bottom: 24px; right: 24px; background: var(--card); border: 1px solid var(--gold-dim); color: var(--txt); padding: 12px 18px; border-radius: 10px; font-size: 13.5px; box-shadow: 0 10px 30px rgba(0,0,0,.5); opacity: 0; transform: translateY(8px); transition: all .25s; pointer-events: none; z-index: 99; }
+  .toast.show { opacity: 1; transform: none; }
+  .stat-row { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 18px; }
+  .stat { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 20px; min-width: 150px; }
+  .stat .v { font-size: 22px; font-weight: 700; color: var(--gold-soft); }
+  .stat .k { font-size: 11px; color: var(--mut); text-transform: uppercase; letter-spacing: 1px; margin-top: 3px; }
+  @media (max-width: 820px) { .grid2, .grid3 { grid-template-columns: 1fr; } .side { width: 64px; } .side .nav span.t { display: none; } .logo small { display: none; } .main { padding: 20px; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="logo">RateWatch<small>Booking mobile rates</small></div>
+    <nav class="nav">
+      <button data-view="overview" class="active"><span class="ico">▦</span><span class="t">Overview</span></button>
+      <button data-view="settings"><span class="ico">⚙</span><span class="t">Settings</span></button>
+      <button data-view="properties"><span class="ico">🏨</span><span class="t">Properties</span></button>
+      <button data-view="run"><span class="ico">▶</span><span class="t">Run &amp; Results</span></button>
+      <button data-view="history"><span class="ico">📈</span><span class="t">History</span></button>
+    </nav>
+    <div class="foot">
+      <span class="dot" id="dotBrowser"></span><span id="statusBrowser">browser…</span><br>
+      <span class="dot" id="dotEmail"></span><span id="statusEmail">email…</span><br>
+      <span class="dot warm" id="dotNames"></span><span id="statusNames">names…</span>
+    </div>
+  </aside>
+
+  <main class="main">
+    <!-- OVERVIEW -->
+    <section class="view active" id="view-overview">
+      <h1>Overview</h1>
+      <div class="sub">Your market at a glance — latest run, config summary, quick actions.</div>
+      <div class="stat-row" id="statRow"></div>
+      <div class="card" id="lastRunCard"><h2>Last run</h2><div class="muted">Nothing yet — go to Run &amp; Results and hit <b>Scrape now</b>.</div></div>
+      <div class="card"><h2>Quick actions</h2>
+        <div class="row-actions">
+          <button class="btn" onclick="go('run')">▶ Scrape now</button>
+          <button class="btn ghost" onclick="go('settings')">⚙ Configure</button>
+          <button class="btn ghost" onclick="refreshNames(false)">⟳ Refresh property names</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section class="view" id="view-settings">
+      <h1>Settings</h1>
+      <div class="sub">Email, dates, location, currency — everything the watcher uses.</div>
+      <div class="card">
+        <h2>📧 Email (Gmail — free)</h2>
+        <div class="grid2">
+          <div><label>From (your Gmail)</label><input type="email" id="setGmailUser" placeholder="you@gmail.com"></div>
+          <div><label>App password (<a style="color:var(--blue)" href="https://myaccount.google.com/apppasswords" target="_blank">create free</a>)</label><input type="password" id="setGmailPass" placeholder="16-character app password"></div>
+          <div><label>Send rates to</label><input type="email" id="setEmailTo" placeholder="you@gmail.com"></div>
+        </div>
+        <div class="row-actions">
+          <button class="btn ghost small" onclick="saveSecrets()">Save email</button>
+          <button class="btn ghost small" onclick="testEmail()">Send test email</button>
+          <span class="muted" id="emailState"></span>
+        </div>
+      </div>
+      <div class="card">
+        <h2>📍 Location &amp; dates</h2>
+        <div class="grid3">
+          <div><label>City</label><input type="text" id="setCity" placeholder="Miami Beach"></div>
+          <div><label>Country code</label><input type="text" id="setCountry" placeholder="us" style="text-transform:lowercase"></div>
+          <div><label>Currency</label><select id="setCurrency"><option>USD</option><option>EUR</option><option>GBP</option><option>INR</option><option>CAD</option><option>AUD</option></select></div>
+          <div><label>Check from (days ahead)</label><input type="number" id="setOffset" min="0" max="90"></div>
+          <div><label>Nights</label><input type="number" id="setNights" min="1" max="14"></div>
+          <div><label>Adults</label><input type="number" id="setAdults" min="1" max="10"></div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>🛡 Preferences</h2>
+        <div class="toggle-row"><div><div class="t-label">Mobile rates only</div><div class="t-sub">Android browser profile — what phone users see</div></div><label class="switch"><input type="checkbox" id="setMobile" checked><span class="sl"></span></label></div>
+        <div class="toggle-row"><div><div class="t-label">Stealth mode (free CAPTCHA hardening)</div><div class="t-sub">Fingerprint masking, session persistence, retry ladder — no paid API</div></div><label class="switch"><input type="checkbox" id="setStealth" checked><span class="sl"></span></label></div>
+        <div class="row-actions"><button class="btn" onclick="saveConfig()">Save all settings</button><span class="muted" id="saveState"></span></div>
+      </div>
+    </section>
+
+    <!-- PROPERTIES -->
+    <section class="view" id="view-properties">
+      <h1>Properties</h1>
+      <div class="sub">Your property and competitors. Type — matching Booking properties appear live.</div>
+      <div class="card">
+        <h2>⭐ Your property</h2>
+        <div class="ac">
+          <input type="text" id="propMine" placeholder="Start typing your property name…" autocomplete="off">
+          <div class="ac-list" id="acMine" style="display:none"></div>
+        </div>
+        <div class="ac-hint" id="mineHint">Type at least 2 letters — suggestions come from Booking's own property list for your city.</div>
+      </div>
+      <div class="card">
+        <h2>🏨 Competitors</h2>
+        <div class="ac">
+          <input type="text" id="propComp" placeholder="Start typing a competitor…" autocomplete="off">
+          <div class="ac-list" id="acComp" style="display:none"></div>
+        </div>
+        <div class="chip-row" id="compChips"></div>
+        <div class="row-actions">
+          <button class="btn" onclick="saveProperties()">Save properties</button>
+          <button class="btn ghost" onclick="refreshNames(false)">⟳ Refresh name list</button>
+          <button class="btn ghost" onclick="refreshNames(true)">⟳ Deep refresh (slower, more names)</button>
+          <span class="muted" id="namesState"></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- RUN -->
+    <section class="view" id="view-run">
+      <h1>Run &amp; Results</h1>
+      <div class="sub">Scrape live Booking mobile rates for your tracked properties now.</div>
+      <div class="card">
+        <div class="row-actions">
+          <button class="btn" id="runBtn" onclick="runScrape()">▶ Scrape now</button>
+          <span id="runStatus"></span>
+        </div>
+        <div class="muted" style="margin-top:10px">Takes ~30–60s. Checks the next upcoming date from your settings (offset + nights).</div>
+      </div>
+      <div id="runResults"></div>
+    </section>
+
+    <!-- HISTORY -->
+    <section class="view" id="view-history">
+      <h1>History</h1>
+      <div class="sub">Price trends from every run — yours vs each competitor.</div>
+      <div class="card"><h2>Price chart</h2><canvas id="chart"></canvas><div class="legend" id="chartLegend"></div></div>
+      <div class="card"><h2>Recent runs</h2><div id="historyTable"></div></div>
+    </section>
+  </main>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+let CONFIG = null, SECRETS = null, NAMES = [];
+
+async function api(path, opts) {
+  const r = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+  return d;
+}
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 2600); }
+function go(view) {
+  document.querySelectorAll('.nav button').forEach(b => b.classList.toggle('active', b.dataset.view === view));
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  $('view-' + view).classList.add('active');
+}
+document.querySelectorAll('.nav button').forEach(b => b.onclick = () => go(b.dataset.view));
+
+/* ---------- autocomplete (instant, local index) ---------- */
+function ac(input, listEl, onPick, extra) {
+  let timer = null;
+  input.addEventListener('input', () => {
+    const q = input.value.trim();
+    if (q.length < 2) { listEl.style.display = 'none'; return; }
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      try {
+        const d = await api('/api/suggest?q=' + encodeURIComponent(q));
+        NAMES = d.names || [];
+        if (input.value.trim().length < 2) return;
+        if (!NAMES.length) { listEl.style.display = 'none'; return; }
+        listEl.innerHTML = NAMES.map((n, i) => `<div class="ac-item" data-i="${i}"><span>${n}</span></div>`).join('');
+        listEl.style.display = 'block';
+        listEl.querySelectorAll('.ac-item').forEach(el => el.onclick = () => {
+          input.value = NAMES[+el.dataset.i]; listEl.style.display = 'none'; if (onPick) onPick(NAMES[+el.dataset.i]);
+        });
+      } catch (e) { listEl.style.display = 'none'; }
+    }, 200);
+  });
+  input.addEventListener('blur', () => setTimeout(() => listEl.style.display = 'none', 180));
+  input.addEventListener('keydown', e => { if (e.key === 'Escape') listEl.style.display = 'none'; });
+}
+
+/* ---------- properties ---------- */
+const mineAc = ac($('propMine'), $('acMine'), n => { $('mineHint').textContent = 'Selected: ' + n; });
+const compAc = ac($('propComp'), $('acComp'), n => addComp(n));
+function addComp(name) {
+  const cur = (window.__comps || []).filter(c => c !== name);
+  cur.push(name); window.__comps = cur; renderChips(); $('propComp').value = '';
+}
+function renderChips() {
+  $('compChips').innerHTML = (window.__comps || []).map((c, i) => `<span class="chip">${c}<button onclick="removeComp(${i})">✕</button></span>`).join('');
+}
+function removeComp(i) { window.__comps.splice(i, 1); renderChips(); }
+
+/* ---------- config load/save ---------- */
+async function loadAll() {
+  const d = await api('/api/config');
+  CONFIG = d.config; SECRETS = d;
+  $('setGmailUser').value = CONFIG.gmailUser || '';   // server merges secrets into config view
+  $('setGmailPass').value = CONFIG.gmailAppPass ? '••••••••' : '';
+  $('setEmailTo').value = CONFIG.emailTo || '';
+  $('setCity').value = CONFIG.city || '';
+  $('setCountry').value = CONFIG.country || 'us';
+  $('setCurrency').value = CONFIG.currency || 'USD';
+  $('setOffset').value = CONFIG.offsetDays ?? 1;
+  $('setNights').value = CONFIG.nights || 1;
+  $('setAdults').value = CONFIG.adults || 2;
+  $('setMobile').checked = CONFIG.mobile !== false;
+  $('setStealth').checked = CONFIG.stealth !== false;
+  $('propMine').value = CONFIG.myProperty || '';
+  window.__comps = CONFIG.competitors || []; renderChips();
+  $('emailState').textContent = d.emailConfigured ? '✓ email configured' : '✗ email not configured yet';
+  await refreshStatus();
+}
+async function saveConfig() {
+  const body = {
+    city: $('setCity').value.trim(), country: $('setCountry').value.trim(), currency: $('setCurrency').value,
+    offsetDays: +$('setOffset').value, nights: +$('setNights').value, adults: +$('setAdults').value,
+    mobile: $('setMobile').checked, stealth: $('setStealth').checked,
+  };
+  await api('/api/config', { method: 'POST', body: JSON.stringify(body) });
+  $('saveState').textContent = '✓ saved ' + new Date().toLocaleTimeString(); toast('Settings saved');
+}
+async function saveSecrets() {
+  await api('/api/secrets', { method: 'POST', body: JSON.stringify({
+    gmailUser: $('setGmailUser').value.trim(), gmailAppPass: $('setGmailPass').value.trim(), emailTo: $('setEmailTo').value.trim(),
+  }) });
+  $('emailState').textContent = '✓ saved'; toast('Email settings saved');
+  await refreshStatus();
+}
+async function testEmail() {
+  await saveSecrets();
+  $('emailState').textContent = 'sending…';
+  try { await api('/api/test-email', { method: 'POST' }); $('emailState').textContent = '✓ test email sent — check inbox'; toast('Test email sent'); }
+  catch (e) { $('emailState').textContent = '✗ ' + e.message; }
+}
+async function saveProperties() {
+  await api('/api/config', { method: 'POST', body: JSON.stringify({ myProperty: $('propMine').value.trim(), competitors: window.__comps }) });
+  toast('Properties saved'); await loadAll();
+}
+async function refreshNames(deep) {
+  $('namesState').textContent = 'building list…';
+  try {
+    const d = await api('/api/refresh-names', { method: 'POST', body: JSON.stringify({ deep: !!deep }) });
+    $('namesState').textContent = `✓ ${d.count} properties indexed${d.deep ? ' (deep)' : ''}`; toast(`${d.count} property names ready`);
+  } catch (e) { $('namesState').textContent = '✗ ' + e.message; }
+  await refreshStatus();
+}
+
+/* ---------- run ---------- */
+async function runScrape() {
+  $('runBtn').disabled = true; $('runStatus').className = 'busy';
+  $('runStatus').innerHTML = '<span class="spin"></span>Scraping live Booking mobile rates… (30–60s)';
+  $('runResults').innerHTML = '';
+  try {
+    const d = await api('/api/run', { method: 'POST' });
+    renderRun(d);
+  } catch (e) {
+    $('runResults').innerHTML = `<div class="alert-box">✗ ${e.message}</div>`;
+  }
+  $('runBtn').disabled = false; $('runStatus').textContent = '';
+  refreshStatus();
+}
+function renderRun(d) {
+  const r = d.report; let html = '';
+  if (r.undercut.length) html += `<div class="alert-box">⚠ <b>Undercut alert:</b> ${r.undercut.map(x => x.name + ' ($' + x.priceUSD + ')').join(', ')} — below your rate!</div>`;
+  else html += `<div class="ok-box">✓ No tracked competitor is cheaper than you right now.</div>`;
+  if (r.notFound.length) html += `<div class="muted" style="margin-bottom:10px">Not found on results pages (name variant or sold out): ${r.notFound.join(', ')}</div>`;
+  html += `<div class="card"><h2>${d.run.mode.toUpperCase()} rates — ${d.run.checkin} → ${d.run.checkout}</h2>
+  <table><thead><tr><th>Property</th><th>Price / night</th><th>vs you</th><th>Score</th></tr></thead><tbody>`;
+  if (r.mine) html += `<tr class="me"><td>⭐ ${r.mine.name}</td><td class="price">$${r.mine.priceUSD}</td><td>—</td><td>${r.mine.score || ''}</td></tr>`;
+  else html += `<tr class="me"><td>⭐ ${CONFIG.myProperty} <span class="badge warn">NOT FOUND</span></td><td>—</td><td>—</td><td>—</td></tr>`;
+  for (const c of r.competitors) {
+    const dCls = c.delta === null ? '' : c.delta < 0 ? 'delta-bad' : 'delta-ok';
+    const dTxt = c.delta === null ? 'n/a' : c.delta < 0 ? `$${-c.delta} cheaper` : c.delta === 0 ? 'same' : `+$${c.delta}`;
+    html += `<tr><td>${c.name}</td><td class="price">$${c.priceUSD}</td><td class="${dCls}">${dTxt}</td><td>${c.score || ''}</td></tr>`;
+  }
+  html += `</tbody></table><div class="muted" style="margin-top:8px">${d.emailed ? '✓ email sent' : 'email not configured — set it in Settings'}</div></div>`;
+  $('runResults').innerHTML = html;
+}
+
+/* ---------- history + chart ---------- */
+async function loadHistory() {
+  const d = await api('/api/history');
+  const h = d.history || [];
+  $('historyTable').innerHTML = h.length ? `<table><thead><tr><th>Time (UTC)</th><th>City</th><th>Dates</th><th>Mine</th><th>Competitors</th></tr></thead><tbody>`
+    + h.slice().reverse().map(r => `<tr><td>${new Date(r.at).toLocaleString()}</td><td>${r.city}</td><td>${r.checkin}→${r.checkout}</td><td>${r.mine ? '$' + r.mine.price : '—'}</td><td>${(r.competitors || []).map(c => c.name.split(' ')[0] + ' $' + c.price).join(', ')}</td></tr>`).join('')
+    + '</tbody></table>' : '<div class="muted">No runs yet.</div>';
+  drawChart(h);
+}
+function drawChart(h) {
+  const cv = $('chart'); const ctx = cv.getContext('2d');
+  const W = cv.width = cv.clientWidth * 2, H = cv.height = 260 * 2;
+  ctx.clearRect(0, 0, W, H);
+  const series = {};
+  for (const r of h) {
+    const t = new Date(r.at).getTime();
+    if (r.mine) (series['mine'] = series['mine'] || []).push({ t, v: r.mine.price });
+    for (const c of (r.competitors || [])) (series[c.name] = series[c.name] || []).push({ t, v: c.price });
+  }
+  const names = Object.keys(series);
+  if (!names.length) { $('chartLegend').innerHTML = '<span class="muted">No data yet.</span>'; return; }
+  const all = names.flatMap(k => series[k]);
+  const minT = Math.min(...all.map(p => p.t)), maxT = Math.max(...all.map(p => p.t));
+  const minV = Math.min(...all.map(p => p.v)) - 5, maxV = Math.max(...all.map(p => p.v)) + 5;
+  const palette = { mine: '#d4af37', '#5b8def': '#5b8def', '#4caf7d': '#4caf7d', '#e05d4d': '#e05d4d', '#9a968c': '#9a968c', '#e8c96a': '#e8c96a', '#c47bd8': '#c47bd8' };
+  const colors = names.map((n, i) => n === 'mine' ? '#d4af37' : ['#5b8def', '#4caf7d', '#e05d4d', '#e8c96a', '#c47bd8', '#9a968c'][i % 6]);
+  const X = t => 40 + (t - minT) / (maxT - minT || 1) * (W - 80);
+  const Y = v => H - 40 - (v - minV) / (maxV - minV || 1) * (H - 80);
+  // grid
+  ctx.strokeStyle = '#22222a'; ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) { const y = H - 40 - i * (H - 80) / 4; ctx.beginPath(); ctx.moveTo(40, y); ctx.lineTo(W - 40, y); ctx.stroke(); }
+  names.forEach((n, i) => {
+    const pts = series[n].sort((a, b) => a.t - b.t);
+    ctx.strokeStyle = colors[i]; ctx.lineWidth = n === 'mine' ? 3 : 1.6;
+    ctx.beginPath(); pts.forEach((p, j) => j ? ctx.lineTo(X(p.t), Y(p.v)) : ctx.moveTo(X(p.t), Y(p.v))); ctx.stroke();
+    // dots + labels
+    ctx.fillStyle = colors[i];
+    pts.forEach(p => { ctx.beginPath(); ctx.arc(X(p.t), Y(p.v), n === 'mine' ? 4 : 3, 0, 7); ctx.fill(); });
+    const last = pts[pts.length - 1];
+    ctx.font = '11px Segoe UI'; ctx.fillText((n === 'mine' ? '⭐ ' : '') + n.split(' ').slice(0, 2).join(' ') + ' $' + last.v, Math.min(X(last.t) + 6, W - 150), Y(last.v) - 6);
+  });
+  $('chartLegend').innerHTML = names.map((n, i) => `<span><span class="sw" style="background:${colors[i]}"></span>${n === 'mine' ? '⭐ you' : n}</span>`).join('');
+}
+
+/* ---------- status ---------- */
+async function refreshStatus() {
+  try {
+    const s = await api('/api/status');
+    $('dotBrowser').className = 'dot ' + (s.browserWarm ? 'on' : 'off');
+    $('statusBrowser').textContent = s.browserWarm ? 'browser warm' : 'browser cold';
+    $('dotEmail').className = 'dot ' + (s.emailConfigured ? 'on' : 'off');
+    $('statusEmail').textContent = s.emailConfigured ? 'email ready' : 'email not set';
+    $('dotNames').className = 'dot ' + (s.indexedNames ? 'on' : 'off');
+    $('statusNames').textContent = s.indexedNames ? s.indexedNames + ' names' : 'no name index';
+    // overview stats
+    const last = s.lastHistory;
+    $('statRow').innerHTML = `
+      <div class="stat"><div class="v">${s.config.city || '—'}</div><div class="k">City</div></div>
+      <div class="stat"><div class="v">${s.config.myProperty || '—'}</div><div class="k">Your property</div></div>
+      <div class="stat"><div class="v">${(s.config.competitors || []).length}</div><div class="k">Competitors</div></div>
+      <div class="stat"><div class="v">${s.config.mobile ? '📱' : '💻'}</div><div class="k">Mobile rates</div></div>
+      <div class="stat"><div class="v">${s.historyEntries}</div><div class="k">Runs recorded</div></div>`;
+    $('lastRunCard').innerHTML = `<h2>Last run</h2>` + (last ? `<div class="muted">${new Date(last.at).toLocaleString()} — ${last.city} ${last.checkin}→${last.checkout} ${last.mode} · you: ${last.mine ? '$' + last.mine.price : '—'} · cheapest comp: ${last.competitors[0] ? '$' + last.competitors[0].price : '—'}</div>` : `<div class="muted">Nothing yet — go to Run &amp; Results and hit <b>Scrape now</b>.</div>`);
+  } catch (e) {}
+}
+
+/* ---------- boot ---------- */
+(async () => {
+  await loadAll();
+  $('chart').addEventListener('click', loadHistory);
+  loadHistory();
+  setInterval(refreshStatus, 15000);
+})();
+</script>
+</body>
+</html>

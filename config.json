@@ -1,14 +1,12 @@
 {
-  "city": "Miami Beach",
+  "city": "Manteo",
   "country": "us",
   "offsetDays": 1,
   "nights": 1,
   "adults": 2,
-  "myProperty": "Sherry Frontenac Oceanfront",
-  "competitors": [
-    "Shelley Hotel",
-    "Hotel Chelsea",
-    "James Hotel",
-    "Century Hotel"
-  ]
+  "myProperty": "Heart of manteo",
+  "competitors": [],
+  "currency": "USD",
+  "mobile": true,
+  "stealth": true
 }
