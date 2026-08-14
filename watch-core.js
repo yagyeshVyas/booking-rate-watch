@@ -102,7 +102,7 @@ async function scrapeGoogle(page, { city, checkin, checkout, adults, currency })
     throw new Error('GOOGLE_NO_PRICES: ' + (await page.evaluate(() => document.body.innerText.slice(0, 120))));
   }
   let hotels = [];
-  for (let i = 0; i < 6 && hotels.length < 5; i++) {
+  for (let i = 0; i < 6 && hotels.length < 12; i++) {
     await sleep(2000);
     hotels = await page.evaluate(() => {
       const HEAD = 'h1,h2,h3,h4,div[role="heading"]';
@@ -156,7 +156,7 @@ async function scrapeSource(source, page, cfg, { checkin, checkout, adults }) {
 // Path: search page → click the property card's price chip → modal opens with the OTA list
 // ("<Site>\n$price" lines after the "All options" header). The search URL is derived from
 // the entity URL (same q/check_in/check_out params, path replaced).
-async function scrapeGoogleOta(page, entityHref, adults, targets) {
+async function scrapeGoogleOta(page, entityHref, adults, targets, qOverride) {
   // rebuild a CLEAN search URL from the entity URL (extra params change the page variant)
   const src = new URL(entityHref);
   const clean = new URL('https://www.google.com/travel/hotels');
@@ -164,6 +164,7 @@ async function scrapeGoogleOta(page, entityHref, adults, targets) {
     const v = src.searchParams.get(k);
     if (v) clean.searchParams.set(k, v);
   }
+  if (qOverride) clean.searchParams.set('q', qOverride); // property-name search fallback
   if (!clean.searchParams.get('adults')) clean.searchParams.set('adults', String(adults || 2));
   await page.goto(clean.toString(), { waitUntil: 'domcontentloaded', timeout: 60000 });
   await new Promise(r => setTimeout(r, 6000));
@@ -570,8 +571,22 @@ async function scrape(cfg, opts = {}) {
                 const ota = await scrapeGoogleOta(page, h.url, adults, t);
                 otaCompare.push({ target: t, ota });
               } catch (e) { otaCompare.push({ target: t, ota: [], error: e.message.slice(0, 80) }); }
+            } else if (g && g.hotels.length) {
+              // exact name match failed → loose word-overlap match on the captured list
+              const tWords = norm(t).split(/(?=[a-z])/).filter(w => w.length > 2).slice(0, 6);
+              const loose = g.hotels.find(h => {
+                const hn = norm(h.name);
+                return tWords.filter(w => hn.includes(w)).length >= 2;
+              });
+              console.error('OTA_LOOSE_MATCH target=' + t + ' → ' + (loose ? loose.name : 'none; captured=' + g.hotels.map(x => x.name).join(' | ').slice(0, 200)));
+              if (loose && loose.url) {
+                try {
+                  const ota = await scrapeGoogleOta(page, loose.url, adults, t);
+                  otaCompare.push({ target: t, ota });
+                } catch (e) { otaCompare.push({ target: t, ota: [], error: e.message.slice(0, 80) }); }
+              }
             } else {
-              console.error('OTA_SKIP target=' + t + (h ? ' (no entity url)' : ' (not in google results)'));
+              console.error('OTA_SKIP target=' + t + ' (google list empty)');
             }
           }
           if (otaCompare.length) extra.push({ source: 'googleOta', targets: otaCompare, hotels: [] });
