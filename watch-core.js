@@ -112,8 +112,18 @@ async function scrapeGoogle(page, { city, checkin, checkout, adults, currency })
         if (name.length < 3 || name.length > 60) continue;
         if (/^(Hotels|Results|Explore|Flights|Vacation|View|See|More|All|Price|Filter|Sort|Nearby|Top)/i.test(name) || /^\d+/.test(name)) continue;
         let price = null, url = null, el = head;
-        const a = head.closest('a') || head.parentElement.closest('a');
-        if (a && /entity/i.test(a.href)) url = a.href;
+        // entity URL: heading's own anchor, else search ancestors for an entity link
+        let a = head.closest('a');
+        if (!a || !/entity/i.test(a.href || '')) {
+          let el2 = head.parentElement;
+          for (let i = 0; i < 5 && el2 && !url; i++) {
+            const found = el2.querySelector ? el2.querySelector('a[href*="entity"]') : null;
+            if (found) url = found.href;
+            el2 = el2.parentElement;
+          }
+        } else {
+          url = a.href;
+        }
         for (let d2 = 0; d2 < 5 && el; d2++) {
           el = el.parentElement; if (!el) continue;
           const m = (el.innerText || '').match(/\$(\d{2,4})/);
@@ -560,6 +570,8 @@ async function scrape(cfg, opts = {}) {
                 const ota = await scrapeGoogleOta(page, h.url, adults, t);
                 otaCompare.push({ target: t, ota });
               } catch (e) { otaCompare.push({ target: t, ota: [], error: e.message.slice(0, 80) }); }
+            } else {
+              console.error('OTA_SKIP target=' + t + (h ? ' (no entity url)' : ' (not in google results)'));
             }
           }
           if (otaCompare.length) extra.push({ source: 'googleOta', targets: otaCompare, hotels: [] });
