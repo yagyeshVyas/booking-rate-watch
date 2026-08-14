@@ -119,7 +119,8 @@ const inName = (h, t) => core.norm(h).includes(core.norm(t).slice(0, 24));
   const runCfg = { ...cfg, city };
   const hasComps = (cfg.competitors || []).length > 0;
   console.error(`SCRAPE city=${city} checkDates=${runCfg.checkDates || 1} mode=${MOBILE ? 'mobile' : 'desktop'} fullScan=${!hasComps}`);
-  const r = await core.scrape(runCfg, { mobile: MOBILE, fullScan: !hasComps, sources: cfg.sources });
+  const proxies = runCfg.useProxies !== false ? await core.refreshProxies() : [];
+  const r = await core.scrape(runCfg, { mobile: MOBILE, fullScan: !hasComps, sources: cfg.sources, proxies });
 
   const reports = r.dateRuns.map(dr => {
     const found = {}, notFound = [];

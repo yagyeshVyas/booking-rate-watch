@@ -243,7 +243,8 @@ app.post('/api/run', async (req, res) => {
   try {
     const c = cfg();
     const hasComps = (c.competitors || []).length > 0;
-    const r = await core.scrape(c, { mobile: c.mobile !== false, stealth: c.stealth !== false, checkDates: c.checkDates, fullScan: !hasComps });
+    const proxies = c.useProxies !== false ? await core.refreshProxies() : [];
+    const r = await core.scrape(c, { mobile: c.mobile !== false, stealth: c.stealth !== false, checkDates: c.checkDates, fullScan: !hasComps, proxies });
 
     const reports = r.dateRuns.map(dr => {
       const found = {}, notFound = [];
@@ -385,6 +386,12 @@ app.post('/api/refresh-geo', async (req, res) => {
     const g = await rebuildGeo();
     if (!g) return res.status(409).json({ ok: false, error: 'already building' });
     res.json({ ok: true, countries: g.countries.length, cities: g.cities.length });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+app.post('/api/refresh-proxies', async (req, res) => {
+  try {
+    const proxies = await core.refreshProxies();
+    res.json({ ok: true, count: proxies.length, proxies: proxies.slice(0, 5) });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 app.get('/api/geo-suggest', (req, res) => {

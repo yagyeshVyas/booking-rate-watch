@@ -245,9 +245,10 @@ async function launchBrowser(stealth = true) {
   }
 }
 
-async function newContext(browser, mobile, storageState) {
+async function newContext(browser, mobile, storageState, proxy) {
   const opts = mobile ? mobileContextOpts() : desktopContextOpts();
   if (storageState) opts.storageState = storageState;
+  if (proxy) opts.proxy = { server: 'http://' + proxy };
   const context = await browser.newContext(opts);
   await context.addInitScript(STEALTH_SCRIPT);
   return context;
@@ -405,6 +406,54 @@ function buildCsv(cfg, reports) {
   return lines.join('\n');
 }
 
+// ---------- free proxy rotation (fresh public proxies every run, auto-updating) ----------
+const PROXY_SOURCES = [
+  'https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt',
+  'https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/http.txt',
+  'https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/all/data.txt',
+  'https://raw.githubusercontent.com/clarketm/proxy-list/master/proxy-list-raw.txt',
+];
+
+// raw CONNECT health check through the proxy (no dependencies)
+function testProxy(proxy, timeoutMs = 6000) {
+  return new Promise((resolve) => {
+    const net = require('net');
+    const [host, port] = proxy.split(':');
+    let done = false;
+    const finish = (ok) => { if (!done) { done = true; clearTimeout(hard); try { sock.destroy(); } catch (e) {} resolve(ok); } };
+    const CRLF = String.fromCharCode(13, 10);
+    const sock = net.connect({ host, port: parseInt(port, 10), timeout: timeoutMs }, () => {
+      sock.write('CONNECT www.google.com:443 HTTP/1.1' + CRLF + 'Host: www.google.com:443' + CRLF + CRLF);
+    });
+    const hard = setTimeout(() => finish(false), timeoutMs + 500); // covers connect-phase hangs too
+    sock.on('data', (d) => { if (d.toString().includes(' 200')) finish(true); });
+    sock.on('error', () => finish(false));
+    sock.on('timeout', () => finish(false));
+  });
+}
+
+// fetch fresh public proxy lists (parallel), shuffle, health-check, return working ones
+async function refreshProxies(limit = 12, testCount = 30) {
+  const list = new Set();
+  await Promise.all(PROXY_SOURCES.map(async (src) => {
+    try {
+      const r = await fetch(src, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(10000) });
+      if (!r.ok) return;
+      const t = await r.text();
+      for (const line of t.split('\n')) {
+        const p = line.trim();
+        if (/^\d{1,3}(\.\d{1,3}){3}:\d{2,5}$/.test(p)) list.add(p);
+      }
+    } catch (e) {}
+  }));
+  const shuffled = [...list].sort(() => Math.random() - 0.5).slice(0, testCount);
+  const working = [];
+  await Promise.all(shuffled.map(async (p) => { if (await testProxy(p, 5000)) working.push(p); }));
+  const out = working.slice(0, limit);
+  console.error('PROXIES: ' + list.size + ' listed, ' + working.length + ' alive, using ' + out.length);
+  return out;
+}
+
 // ---------- scrape (proven recipe + retry ladder) ----------
 const inName = (hotelName, target) => norm(hotelName).includes(norm(target).slice(0, 24));
 
@@ -460,15 +509,20 @@ async function scrape(cfg, opts = {}) {
   }
 
   const attempts = stealth ? [true, true, false] : [true]; // ladder: stealth → headful local
+  const proxies = (opts.proxies || []).slice();
   let lastErr = null;
   for (let attempt = 0; attempt < attempts.length; attempt++) {
     const headful = attempts[attempt] === false;
+    // rotate to a fresh proxy on each attempt (auto-refresh happens in refreshProxies each run)
+    const proxy = proxies.length ? proxies.shift() : null;
+    if (proxy) console.error('ATTEMPT ' + (attempt + 1) + ' via proxy ' + proxy);
     let browser = null, context = null;
     try {
       browser = await launchBrowser(stealth && !headful);
       const state = fs.existsSync(STATE_FILE) ? JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')) : undefined;
-      context = await newContext(browser, mobile, state);
+      context = await newContext(browser, mobile, state, proxy);
       const page = await context.newPage();
+      // even the session warm-up can be blocked on a bad proxy — verify we got a real page
       const sess = await getSession(page, country);
       const destInfo = await resolveDest(page, cfg.city, country);
       if (!destInfo) throw new Error(`DEST_NOT_FOUND for "${cfg.city}" — Booking couldn't find it. Check the exact spelling (e.g. "Outer Banks" instead of "outerbanks") or pick it from the city list in the dashboard.`);
@@ -623,4 +677,4 @@ async function scrape(cfg, opts = {}) {
   throw lastErr || new Error('scrape failed');
 }
 
-module.exports = { scrape, scrapeSource, scrapeGoogleOta, buildCsv, SOURCES, buildNameIndex, buildGeoIndex, GEO_FILE, STATE_FILE, resolveDest, getDestId, launchBrowser, newContext, getSession, slugify, norm, inName, humanizeSlug };
+module.exports = { scrape, scrapeSource, scrapeGoogleOta, buildCsv, refreshProxies, testProxy, SOURCES, buildNameIndex, buildGeoIndex, GEO_FILE, STATE_FILE, resolveDest, getDestId, launchBrowser, newContext, getSession, slugify, norm, inName, humanizeSlug };

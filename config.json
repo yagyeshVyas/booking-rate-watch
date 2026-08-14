@@ -16,5 +16,6 @@
   "sources": [
     "booking",
     "google"
-  ]
+  ],
+  "useProxies": true
 }

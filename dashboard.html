@@ -189,6 +189,8 @@
         <h2>🛡 Preferences</h2>
         <div class="toggle-row"><div><div class="t-label">Mobile rates only</div><div class="t-sub">Android browser profile — what phone users see</div></div><label class="switch"><input type="checkbox" id="setMobile" checked><span class="sl"></span></label></div>
         <div class="toggle-row"><div><div class="t-label">Stealth mode (free CAPTCHA hardening)</div><div class="t-sub">Fingerprint masking, session persistence, retry ladder — no paid API</div></div><label class="switch"><input type="checkbox" id="setStealth" checked><span class="sl"></span></label></div>
+        <div class="toggle-row"><div><div class="t-label">Free proxy rotation <span class="t-sub">fresh public proxies fetched + health-checked EVERY run, rotate on failure, direct fallback</span></div></div><label class="switch"><input type="checkbox" id="setProxies" checked><span class="sl"></span></label></div>
+        <div class="row-actions"><button class="btn ghost small" onclick="testProxies()">🧪 Test proxies now</button><span class="muted" id="proxyState"></span></div>
         <div class="row-actions"><button class="btn" onclick="saveConfig()">Save all settings</button><span class="muted" id="saveState"></span></div>
       </div>
     </section>
@@ -323,6 +325,7 @@ async function loadAll() {
   $('setAdults').value = CONFIG.adults || 2;
   $('setMobile').checked = CONFIG.mobile !== false;
   $('setStealth').checked = CONFIG.stealth !== false;
+  $('setProxies').checked = CONFIG.useProxies !== false;
   const srcs = CONFIG.sources || ['booking', 'google'];
   ['booking', 'google', 'expedia', 'trivago', 'agoda', 'kayak'].forEach(s => { const el = $('src-' + s); if (el) el.checked = srcs.includes(s); });
   $('propMine').value = CONFIG.myProperty || '';
@@ -348,7 +351,7 @@ async function saveConfig() {
     city: $('setCity').value.trim(), country: $('setCountry').value.trim(), currency: $('setCurrency').value,
     startDate: $('setStartDate').value, endDate: $('setEndDate').value,
     nights: +$('setNights').value, adults: +$('setAdults').value,
-    mobile: $('setMobile').checked, stealth: $('setStealth').checked,
+    mobile: $('setMobile').checked, stealth: $('setStealth').checked, useProxies: $('setProxies').checked,
     sources: ['booking', 'google', 'expedia', 'trivago', 'agoda', 'kayak'].filter(s => { const el = $('src-' + s); return el && el.checked; }),
   };
   await api('/api/config', { method: 'POST', body: JSON.stringify(body) });
@@ -416,6 +419,13 @@ async function refreshGeo() {
   } catch (e) { $('geoState').textContent = '✗ ' + e.message; }
 }
 
+async function testProxies() {
+  $('proxyState').textContent = 'fetching + health-checking fresh public proxies…';
+  try {
+    const d = await api('/api/refresh-proxies', { method: 'POST' });
+    $('proxyState').textContent = `✓ ${d.count} working proxies ready (${(d.proxies || []).join(', ')})`;
+  } catch (e) { $('proxyState').textContent = '✗ ' + e.message; }
+}
 async function saveProperties() {
   const r = await api('/api/config', { method: 'POST', body: JSON.stringify({ myProperty: $('propMine').value.trim(), competitors: window.__comps }) });
   $('propsState').textContent = `✓ saved ${new Date().toLocaleTimeString()} — ${r.config.competitors.length} competitor(s)`;
