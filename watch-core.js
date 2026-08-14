@@ -233,12 +233,18 @@ async function saveState(context) {
 
 // ---------- session + dest_id (same proven recipe, retries) ----------
 async function getSession(page, country) {
-  await page.goto('https://www.booking.com/index.en-gb.html', { waitUntil: 'domcontentloaded', timeout: 60000 });
-  await sleep(2500);
-  return page.evaluate(() => {
-    const u = new URL(location.href);
-    return { aid: u.searchParams.get('aid'), label: u.searchParams.get('label'), sid: u.searchParams.get('sid') };
-  });
+  let sess = null;
+  for (let i = 0; i < 3; i++) {
+    await page.goto('https://www.booking.com/index.en-gb.html', { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await sleep(2500);
+    sess = await page.evaluate(() => {
+      const u = new URL(location.href);
+      return { aid: u.searchParams.get('aid'), label: u.searchParams.get('label'), sid: u.searchParams.get('sid') };
+    });
+    if (sess.label || sess.aid || sess.sid) break; // session params issued (fresh sessions need the redirect)
+    await sleep(2000);
+  }
+  return sess;
 }
 
 async function getDestId(page, slug, country) {
@@ -346,6 +352,31 @@ async function buildNameIndex(page, slug, country, deep = false) {
     }
   }
   return [...names.entries()].map(([name, slug]) => ({ name, slug }));
+}
+
+// ---------- CSV export (multi-date × multi-source, attached to every email) ----------
+function csvCell(v) { const s = String(v ?? ''); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
+function buildCsv(cfg, reports) {
+  const lines = ['date,source,site,property,price,score,url'];
+  for (const r of reports || []) {
+    for (const h of r.hotels || []) {
+      lines.push([r.checkin, 'booking', '', h.name, h.priceUSD ?? '', h.score || '', h.url || ''].map(csvCell).join(','));
+    }
+    for (const s of r.sources || []) {
+      if (s.source === 'googleOta') {
+        for (const t of s.targets || []) {
+          for (const o of t.ota || []) {
+            lines.push([r.checkin, 'google-ota', o.ota, t.target, o.price, '', ''].map(csvCell).join(','));
+          }
+        }
+      } else if (!s.blocked && s.hotels && s.hotels.length) {
+        for (const h of s.hotels) {
+          lines.push([r.checkin, s.source, '', h.name, h.price ?? '', '', h.url || ''].map(csvCell).join(','));
+        }
+      }
+    }
+  }
+  return lines.join('\n');
 }
 
 // ---------- scrape (proven recipe + retry ladder) ----------
@@ -486,7 +517,6 @@ async function scrape(cfg, opts = {}) {
         try {
           if (di === 0) {
             hotels = await loadFirstDate();
-            // destination hint led to an empty page → retry letting Booking geocode ss itself
             if (hotels.length === 0 && destActive) {
               destActive = false;
               q.delete('dest_id'); q.delete('dest_type');
@@ -497,9 +527,17 @@ async function scrape(cfg, opts = {}) {
             hotels = await loadPage(0);
           }
         } catch (e) {
-          dateBookingError = e.message;
-          if (!bookingFailed) bookingFailed = e.message;
-          console.error('BOOKING_FAILED date ' + p.checkin + ': ' + e.message);
+          // load error (NO_CARDS / CAPTCHA / PRICES_NOT_RENDERED) — retry ONCE without dest_id
+          if (destActive && di === 0) {
+            destActive = false;
+            q.delete('dest_id'); q.delete('dest_type');
+            console.error('BOOKING_RETRY_SS_ONLY after ' + e.message.slice(0, 60));
+            try { hotels = await loadFirstDate(); } catch (e2) { dateBookingError = e2.message; }
+          } else {
+            dateBookingError = e.message;
+          }
+          if (!bookingFailed) bookingFailed = dateBookingError || e.message;
+          if (dateBookingError) console.error('BOOKING_FAILED date ' + p.checkin + ': ' + dateBookingError);
         }
         // extra sources (Google Hotels etc.) — one lightweight load per date
         const extra = [];
@@ -543,4 +581,4 @@ async function scrape(cfg, opts = {}) {
   throw lastErr || new Error('scrape failed');
 }
 
-module.exports = { scrape, scrapeSource, scrapeGoogleOta, SOURCES, buildNameIndex, buildGeoIndex, GEO_FILE, STATE_FILE, resolveDest, getDestId, launchBrowser, newContext, getSession, slugify, norm, inName, humanizeSlug };
+module.exports = { scrape, scrapeSource, scrapeGoogleOta, buildCsv, SOURCES, buildNameIndex, buildGeoIndex, GEO_FILE, STATE_FILE, resolveDest, getDestId, launchBrowser, newContext, getSession, slugify, norm, inName, humanizeSlug };

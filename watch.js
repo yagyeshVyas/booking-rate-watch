@@ -20,7 +20,7 @@ const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').
 function renderEmailHtml(c, runs) {
   const mine = c.myProperty;
   const hasComps = (c.competitors || []).length > 0;
-  const total = runs.reduce((s, r) => s + r.hotels.length, 0);
+  const total = runs.reduce((s, r) => s + r.hotels.length + (r.sources || []).reduce((x, src) => x + (src.hotels ? src.hotels.length : 0), 0), 0);
   const und = runs.filter(r => r.undercut.length);
   let rows = '';
   for (const r of runs) {
@@ -29,7 +29,7 @@ function renderEmailHtml(c, runs) {
     rows += `<tr><td style="padding:9px 12px;border-bottom:1px solid #eee;font-weight:600">${r.checkin} → ${r.checkout}</td><td style="padding:9px 12px;border-bottom:1px solid #eee">${r.mine ? '<b>$' + r.mine.priceUSD + '</b>' : '<span style="color:#999">not found</span>'}</td><td style="padding:9px 12px;border-bottom:1px solid #eee">${cheapest ? '<b>$' + cheapest.priceUSD + '</b> · ' + esc(cheapest.name) : '—'}</td><td style="padding:9px 12px;border-bottom:1px solid #eee">${deltaTxt}</td><td style="padding:9px 12px;border-bottom:1px solid #eee">${r.undercut.length ? '<span style="background:#fdecea;color:#c0392b;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600">⚠ below you</span>' : '<span style="background:#eafaf1;color:#1e8449;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600">✓ ok</span>'}</td></tr>`;
   }
   let listSection = '';
-  if (!hasComps) {
+  if (!hasComps && runs[0] && runs[0].hotels && runs[0].hotels.length) {
     const cap = 60;
     const all = runs[0].hotels.slice(0, cap);
     const more = runs[0].hotels.length - all.length;
@@ -41,6 +41,19 @@ function renderEmailHtml(c, runs) {
   const undAlert = und.length
     ? `<div style="background:#fdecea;border:1px solid #f5b7b1;border-radius:8px;padding:12px 16px;margin:14px 0;color:#922b21;font-size:13.5px"><b>⚠ Undercut alert:</b> a tracked competitor is cheaper than you on ${und.length} of ${runs.length} checked date(s). See table.</div>`
     : `<div style="background:#eafaf1;border:1px solid #a9dfbf;border-radius:8px;padding:12px 16px;margin:14px 0;color:#145a32;font-size:13.5px"><b>✓ Good news:</b> no tracked competitor is cheaper than you on any checked date.</div>`;
+  // Google Hotels — per-date rows for the tracked property (ALL dates)
+  let googleRows = '';
+  let googleAny = false;
+  for (const r of runs) {
+    const g = (r.sources || []).find(s => s.source === 'google' && !s.blocked);
+    if (!g || !g.mine) continue;
+    googleAny = true;
+    const ch = g.competitors[0];
+    const dTxt = ch ? (ch.delta < 0 ? `<span style="color:#c0392b;font-weight:600">$${-ch.delta} under you</span>` : ch.delta === 0 ? 'same' : `<span style="color:#1e8449">+$${ch.delta}</span>`) : '—';
+    googleRows += `<tr><td style="padding:8px 12px;border-bottom:1px solid #eee;font-weight:600">${r.checkin} → ${r.checkout}</td><td style="padding:8px 12px;border-bottom:1px solid #eee"><b>$${g.mine.price}</b></td><td style="padding:8px 12px;border-bottom:1px solid #eee">${ch ? '<b>$' + ch.price + '</b> · ' + esc(ch.name) : '—'}</td><td style="padding:8px 12px;border-bottom:1px solid #eee">${dTxt}</td><td style="padding:8px 12px;border-bottom:1px solid #eee">${g.undercut.length ? '<span style="background:#fdecea;color:#c0392b;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600">⚠ below you</span>' : '<span style="background:#eafaf1;color:#1e8449;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600">✓ ok</span>'}</td></tr>`;
+  }
+  const googleSection = googleAny ? `<h2 style="font-size:15px;color:#333;margin:20px 0 10px">Google Hotels — your property, date by date</h2>
+  <table style="border-collapse:collapse;width:100%;font-size:13px"><tr style="color:#888;text-align:left;font-size:11px;text-transform:uppercase"><th style="padding:6px 12px;border-bottom:2px solid #eee">Dates</th><th style="padding:6px 12px;border-bottom:2px solid #eee">Your Google rate</th><th style="padding:6px 12px;border-bottom:2px solid #eee">Cheapest competitor</th><th style="padding:6px 12px;border-bottom:2px solid #eee">Vs you</th><th style="padding:6px 12px;border-bottom:2px solid #eee">Status</th></tr>${googleRows}</table>` : '';
   const SRC_LABEL = { google: 'Google Hotels', expedia: 'Expedia', trivago: 'Trivago', agoda: 'Agoda', kayak: 'KAYAK' };
   let sourcesHtml = '';
   for (const s of (runs[0].sources || [])) {
@@ -54,10 +67,7 @@ function renderEmailHtml(c, runs) {
       }
       continue;
     }
-    if (s.blocked) {
-      sourcesHtml += `<div style="margin:12px 0;padding:10px 14px;background:#fdf6ec;border:1px solid #f0d9b5;border-radius:8px;color:#7d6608;font-size:12.5px"><b>${label}</b> — not available: ${esc(s.blocked)}</div>`;
-      continue;
-    }
+    if (s.blocked) continue; // unsupported sources are silent in the email (dashboard shows why)
     const srows = s.hotels.slice(0, 14).map((h, i) => {
       const mine = s.mine && core.norm(h.name) === core.norm(s.mine.name);
       return `<tr><td style="padding:6px 12px;border-bottom:1px solid #f2f2f2;color:#888">${i + 1}</td><td style="padding:6px 12px;border-bottom:1px solid #f2f2f2;${mine ? 'background:#fff8e1;font-weight:700' : ''}">${esc(h.name)}${mine ? ' ← yours' : ''}</td><td style="padding:6px 12px;border-bottom:1px solid #f2f2f2"><b>$${h.price}</b></td></tr>`;
@@ -75,13 +85,14 @@ function renderEmailHtml(c, runs) {
   ${undAlert}
   <h2 style="font-size:15px;color:#333;margin:20px 0 10px">Date by date${mine ? ' — your property: <span style="color:#b8860b">' + esc(mine) + '</span>' : ''}</h2>
   <table style="border-collapse:collapse;width:100%;font-size:13px"><tr style="color:#888;text-align:left;font-size:11px;text-transform:uppercase"><th style="padding:6px 12px;border-bottom:2px solid #eee">Dates</th><th style="padding:6px 12px;border-bottom:2px solid #eee">Your rate</th><th style="padding:6px 12px;border-bottom:2px solid #eee">Cheapest competitor</th><th style="padding:6px 12px;border-bottom:2px solid #eee">Vs you</th><th style="padding:6px 12px;border-bottom:2px solid #eee">Status</th></tr>${rows}</table>
+  ${googleSection}
   ${sourcesHtml}
   ${listSection}
   <p style="color:#aaa;font-size:11px;margin-top:28px;border-top:1px solid #eee;padding-top:12px">Automated rate watch — runs every 5 hours. Prices change frequently; verify on Booking.com before relying on them. This is a personal competitive-research tool.</p>
 </div></body></html>`;
 }
 
-async function sendEmail(subject, html) {
+async function sendEmail(subject, html, csv) {
   // email config comes from env (GitHub secrets) or the dashboard's local secrets file — NEVER from config.json
   let to = process.env.EMAIL_TO || null;
   let user = process.env.GMAIL_USER || null;
@@ -95,7 +106,7 @@ async function sendEmail(subject, html) {
   if (!user || !pass || !to) { console.log('EMAIL_SKIPPED (set GMAIL_USER, GMAIL_APP_PASS, EMAIL_TO or configure email in the dashboard)'); return false; }
   const nodemailer = require('nodemailer');
   const t = nodemailer.createTransport({ host: 'smtp.gmail.com', port: 465, secure: true, auth: { user, pass } });
-  await t.sendMail({ from: `"Price Watch" <${user}>`, to, subject, html });
+  await t.sendMail({ from: `"Price Watch" <${user}>`, to, subject, html, attachments: csv ? [{ filename: 'price-watch-rates.csv', content: csv }] : undefined });
   console.log('EMAIL_SENT to', to);
   return true;
 }
@@ -151,5 +162,5 @@ const inName = (h, t) => core.norm(h).includes(core.norm(t).slice(0, 24));
   const undCount = reports.filter(x => x.undercut.length).length;
   const firstMine = reports[0].mine;
   const subj = `[PriceWatch] ${city} ${reports[0].checkin}→${reports[reports.length - 1].checkout} · you ${firstMine ? '$' + firstMine.priceUSD : 'n/a'}${undCount ? ' ⚠' : ''}`;
-  await sendEmail(subj, renderEmailHtml(runCfg, reports));
+  await sendEmail(subj, renderEmailHtml(runCfg, reports), core.buildCsv(runCfg, reports));
 })().catch(e => { console.error('FATAL:', e.message); process.exit(/CAPTCHA/.test(e.message) ? 2 : 1); });

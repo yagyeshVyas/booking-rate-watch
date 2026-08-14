@@ -15,10 +15,6 @@
   "fullScan": true,
   "sources": [
     "booking",
-    "google",
-    "expedia",
-    "trivago",
-    "agoda",
-    "kayak"
+    "google"
   ]
 }
