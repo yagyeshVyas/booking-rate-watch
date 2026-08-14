@@ -1,7 +1,7 @@
 {
-  "city": "Manteo",
+  "city": "Outer Banks",
   "country": "us",
-  "offsetDays": 10,
+  "offsetDays": 0,
   "nights": 1,
   "adults": 2,
   "myProperty": "Heart of manteo",
@@ -9,8 +9,8 @@
   "currency": "USD",
   "mobile": true,
   "stealth": true,
-  "checkDates": 1,
-  "startDaysFromToday": 10,
-  "endDaysFromToday": 10,
+  "checkDates": 6,
+  "startDaysFromToday": 0,
+  "endDaysFromToday": 5,
   "fullScan": true
 }

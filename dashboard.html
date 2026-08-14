@@ -155,13 +155,21 @@
       <div class="card">
         <h2>📍 Location &amp; dates</h2>
         <div class="grid3">
-          <div><label>City</label><input type="text" id="setCity" placeholder="Miami Beach"></div>
-          <div><label>Country code</label><input type="text" id="setCountry" placeholder="us" style="text-transform:lowercase"></div>
+          <div><label>City <span style="color:var(--gold-dim)">(type to search)</span></label>
+            <div class="ac"><input type="text" id="setCity" placeholder="e.g. Las Vegas…" autocomplete="off"><div class="ac-list" id="acCity" style="display:none"></div></div>
+          </div>
+          <div><label>Country <span style="color:var(--gold-dim)">(type to search)</span></label>
+            <div class="ac"><input type="text" id="setCountry" placeholder="e.g. United States…" autocomplete="off"><div class="ac-list" id="acCountry" style="display:none"></div></div>
+          </div>
           <div><label>Currency</label><select id="setCurrency"><option>USD</option><option>EUR</option><option>GBP</option><option>INR</option><option>CAD</option><option>AUD</option></select></div>
           <div><label>Start date <span style="color:var(--gold-dim)">(auto-rolls)</span></label><input type="date" id="setStartDate"></div>
           <div><label>End date <span style="color:var(--gold-dim)">(auto-rolls)</span></label><input type="date" id="setEndDate"></div>
           <div><label>Nights per stay</label><input type="number" id="setNights" min="1" max="14"></div>
           <div><label>Adults</label><input type="number" id="setAdults" min="1" max="10"></div>
+        </div>
+        <div class="row-actions" style="margin-top:12px">
+          <button class="btn ghost small" onclick="refreshGeo()">⟳ Update places list</button>
+          <span class="muted" id="geoState"></span>
         </div>
         <div class="muted" id="datePreview" style="margin-top:10px"></div>
       </div>
@@ -355,6 +363,44 @@ async function syncGh() {
     toast(d.msg);
   } catch (e) { $('ghState').textContent = '✗ ' + e.message; }
 }
+/* ---------- geo autocomplete (cities + countries) ---------- */
+function geoAc(input, listEl, kind, onPick) {
+  let timer = null;
+  input.addEventListener('input', () => {
+    const q = input.value.trim();
+    if (q.length < 2) { listEl.style.display = 'none'; return; }
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      try {
+        const d = await api('/api/geo-suggest?q=' + encodeURIComponent(q));
+        if (!d.ready) { listEl.innerHTML = '<div class="ac-item"><span>place list not ready — click ⟳ Update places list</span></div>'; listEl.style.display = 'block'; return; }
+        let items = [];
+        if (kind === 'city') items = d.cities.map(c => ({ label: c.name, sub: c.country + ' (' + c.cc + ')', val: c.name }));
+        else items = d.countries.map(c => ({ label: c.name, sub: c.code.toUpperCase(), val: c.code }));
+        if (!items.length) { listEl.style.display = 'none'; return; }
+        listEl.innerHTML = items.map((it, i) => `<div class="ac-item" data-i="${i}"><span>${it.label}</span><span class="m">${it.sub}</span></div>`).join('');
+        listEl.style.display = 'block';
+        listEl.querySelectorAll('.ac-item').forEach(el => el.onclick = () => {
+          const it = items[+el.dataset.i];
+          input.value = it.val; listEl.style.display = 'none'; if (onPick) onPick(it);
+        });
+      } catch (e) { listEl.style.display = 'none'; }
+    }, 250);
+  });
+  input.addEventListener('blur', () => setTimeout(() => listEl.style.display = 'none', 180));
+  input.addEventListener('keydown', e => { if (e.key === 'Escape') listEl.style.display = 'none'; });
+}
+geoAc($('setCity'), $('acCity'), 'city', () => { updateDatePreview(); refreshNames(false); });
+geoAc($('setCountry'), $('acCountry'), 'country', () => {});
+async function refreshGeo() {
+  $('geoState').textContent = 'building place list (countries + all cities)… ~1 min';
+  try {
+    const d = await api('/api/refresh-geo', { method: 'POST' });
+    $('geoState').textContent = `✓ ${d.countries} countries · ${Number(d.cities).toLocaleString()} cities ready`;
+    toast('Places updated — city & country autocomplete ready'); refreshStatus();
+  } catch (e) { $('geoState').textContent = '✗ ' + e.message; }
+}
+
 async function saveProperties() {
   const r = await api('/api/config', { method: 'POST', body: JSON.stringify({ myProperty: $('propMine').value.trim(), competitors: window.__comps }) });
   $('propsState').textContent = `✓ saved ${new Date().toLocaleTimeString()} — ${r.config.competitors.length} competitor(s)`;
@@ -491,6 +537,9 @@ async function refreshStatus() {
   $('chart').addEventListener('click', loadHistory);
   loadHistory();
   setInterval(refreshStatus, 15000);
+  // auto-build the places list on first use if not cached
+  const st = await api('/api/status').catch(() => null);
+  if (st && !st.geoReady) refreshGeo();
 })();
 </script>
 </body>

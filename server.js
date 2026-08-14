@@ -287,6 +287,57 @@ app.post('/api/sync-gh', async (req, res) => {
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
+// ---- geo index (countries + cities autocomplete) ----
+let geoIndex = null;
+let geoBuilding = false;
+const loadGeo = () => { try { geoIndex = JSON.parse(fs.readFileSync(path.join(ROOT, 'geo-index.json'), 'utf8')); } catch (e) {} };
+loadGeo();
+async function rebuildGeo() {
+  if (geoBuilding) return null;
+  geoBuilding = true;
+  try {
+    const g = await core.buildGeoIndex();
+    geoIndex = g;
+    fs.writeFileSync(path.join(ROOT, 'geo-index.json'), JSON.stringify(g));
+    return g;
+  } finally { geoBuilding = false; }
+}
+app.post('/api/refresh-geo', async (req, res) => {
+  try {
+    const g = await rebuildGeo();
+    if (!g) return res.status(409).json({ ok: false, error: 'already building' });
+    res.json({ ok: true, countries: g.countries.length, cities: g.cities.length });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+app.get('/api/geo-suggest', (req, res) => {
+  const q = String(req.query.q || '').toLowerCase().trim();
+  if (!geoIndex || !geoIndex.cities) return res.json({ ready: false, countries: [], cities: [] });
+  if (!q) return res.json({ ready: true, countries: [], cities: [] });
+  const myCC = (cfg().country || 'us').toLowerCase();
+  const cname = (cc) => { const c = geoIndex.countries.find(x => x.code === cc); return c ? c.name : cc.toUpperCase(); };
+  // curated popular destinations rank above everything (real Booking slugs)
+  const TOP = new Set(['las-vegas', 'los-angeles', 'new-york', 'miami', 'miami-beach', 'orlando', 'chicago', 'san-francisco', 'san-diego', 'seattle', 'boston', 'washington-dc', 'philadelphia', 'atlanta', 'houston', 'dallas', 'austin', 'denver', 'phoenix', 'nashville', 'new-orleans', 'charleston', 'savannah', 'key-west', 'fort-lauderdale', 'tampa', 'honolulu', 'anchorage', 'portland', 'salt-lake-city', 'london', 'paris', 'rome', 'venice', 'florence', 'milan', 'barcelona', 'madrid', 'amsterdam', 'berlin', 'munich', 'vienna', 'prague', 'budapest', 'lisbon', 'dublin', 'edinburgh', 'brussels', 'zurich', 'geneva', 'copenhagen', 'stockholm', 'oslo', 'helsinki', 'warsaw', 'athens', 'istanbul', 'dubai', 'abu-dhabi', 'doha', 'riyadh', 'tel-aviv', 'jerusalem', 'cairo', 'marrakech', 'casablanca', 'cape-town', 'johannesburg', 'nairobi', 'tokyo', 'osaka', 'kyoto', 'seoul', 'bangkok', 'phuket', 'singapore', 'kuala-lumpur', 'bali', 'jakarta', 'manila', 'hong-kong', 'macau', 'taipei', 'shanghai', 'beijing', 'sydney', 'melbourne', 'brisbane', 'perth', 'auckland', 'queenstown', 'fiji', 'maui', 'mexico-city', 'cancun', 'tulum', 'puerto-vallarta', 'havana', 'bogota', 'lima', 'cusco', 'rio-de-janeiro', 'sao-paulo', 'buenos-aires', 'santiago', 'quito', 'panama-city', 'san-jose', 'san-juan', 'punta-cana', 'santo-domingo', 'montego-bay', 'nassau', 'barbados', 'aruba', 'grand-cayman', 'toronto', 'vancouver', 'montreal', 'quebec-city', 'calgary', 'banff', 'whistler', 'niagara-falls', 'myrtle-beach', 'nags-head', 'kill-devil-hills', 'obx', 'gatlinburg', 'asheville', 'santa-fe', 'sedona', 'jackson-hole', 'aspen', 'vail', 'lake-tahoe', 'palm-springs', 'santa-barbara', 'monterey', 'carmel-by-the-sea', 'santa-monica', 'malibu', 'laguna-beach', 'newport-beach', 'long-beach', 'anaheim', 'san-jose-costa-rica']);
+  // countries: exact code → prefix → substring
+  const c1 = [], c2 = [], c3 = [];
+  for (const c of geoIndex.countries) {
+    const n = c.name.toLowerCase();
+    if (c.code === q) c1.push(c);
+    else if (n.startsWith(q)) c2.push(c);
+    else if (n.includes(q)) c3.push(c);
+  }
+  const countries = [...c1, ...c2, ...c3].slice(0, 8);
+  // cities: curated top → exact slug → user's country → rest, then substring matches
+  const t1 = [], t2 = [];
+  for (const c of geoIndex.cities) {
+    const name = core.humanizeSlug(c.slug);
+    const low = name.toLowerCase();
+    if (low.startsWith(q)) t1.push({ name, cc: c.cc, country: cname(c.cc), slug: c.slug, rank: TOP.has(c.slug) ? 0 : c.slug === q ? 0.1 : c.cc === myCC ? 1 : 2 });
+    else if (low.includes(q)) t2.push({ name, cc: c.cc, country: cname(c.cc), slug: c.slug, rank: TOP.has(c.slug) ? 2.5 : 3 });
+  }
+  const cities = [...t1, ...t2].sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name)).slice(0, 10);
+  res.json({ ready: true, countries, cities });
+});
+
 // ---- status ----
 app.get('/api/status', (req, res) => {
   res.json({
@@ -294,6 +345,9 @@ app.get('/api/status', (req, res) => {
     indexedNames: nameIndex ? nameIndex.length : 0,
     historyEntries: history(100000).length,
     lastHistory: history(1)[0] || null,
+    geoReady: !!(geoIndex && geoIndex.cities && geoIndex.cities.length),
+    geoCities: geoIndex && geoIndex.cities ? geoIndex.cities.length : 0,
+    geoCountries: geoIndex && geoIndex.countries ? geoIndex.countries.length : 0,
     config: cfg(),
     emailConfigured: (() => { const s = secrets(); return !!(s.gmailUser && s.gmailAppPass && s.emailTo); })(),
   });

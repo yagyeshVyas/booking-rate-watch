@@ -41,6 +41,46 @@ const humanizeSlug = (s) => s.split('-').map(w => w.charAt(0).toUpperCase() + w.
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const decodeHtml = (s) => s.replace(/&amp;/g, '&').replace(/&#x27;|&#39;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ');
 
+// ---------- geo index (countries + all Booking cities) — pure Node, no browser ----------
+const GEO_FILE = path.join(__dirname, 'geo-index.json');
+
+async function buildGeoIndex() {
+  const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+  const H = { 'User-Agent': UA, 'Accept': 'text/html,application/xhtml+xml,application/xml,*/*', 'Accept-Language': 'en-GB,en;q=0.9', 'Accept-Encoding': 'gzip, deflate' };
+  const get = async (url) => { const r = await fetch(url, { headers: H }); if (!r.ok) throw new Error('HTTP ' + r.status); return r; };
+
+  const countries = [];
+  try {
+    const html = await (await get('https://www.booking.com/country.en-gb.html')).text();
+    const re = /href="\/country\/([a-z]{2})(?:\.en-gb)?\.html[^"]*"[^>]*>\s*([^<]{2,60}?)\s*<\/a>/g;
+    const seen = new Set(); let m;
+    while ((m = re.exec(html))) {
+      const code = m[1], name = decodeHtml(m[2].trim());
+      if (!seen.has(code)) { seen.add(code); countries.push({ code, name }); }
+    }
+  } catch (e) { console.error('GEO countries failed:', e.message); }
+
+  const cities = [];
+  try {
+    const zlib = require('zlib');
+    const idx = await (await get('https://www.booking.com/sitembk-city-index.xml')).text();
+    const files = [...idx.matchAll(/<loc>(https:\/\/www\.booking\.com\/sitembk-city-sl\.[0-9]+\.xml\.gz)<\/loc>/g)].map(m => m[1]);
+    for (const f of files) {
+      const buf = Buffer.from(await (await get(f)).arrayBuffer());
+      const xml = zlib.gunzipSync(buf).toString('utf8');
+      const re = /city\/([a-z]{2})\/([a-z0-9-]+)\.sl\.html/g;
+      let m;
+      while ((m = re.exec(xml))) cities.push({ cc: m[1], slug: m[2] });
+      await sleep(400);
+    }
+  } catch (e) { console.error('GEO cities failed:', e.message); }
+
+  // dedupe
+  const seen = new Set(); const uniqCities = [];
+  for (const c of cities) { const k = c.cc + '/' + c.slug; if (!seen.has(k)) { seen.add(k); uniqCities.push(c); } }
+  return { countries, cities: uniqCities };
+}
+
 // ---------- browser lifecycle (persistent session = returning user = fewer challenges) ----------
 async function launchBrowser(stealth = true) {
   const opts = { args: ['--disable-blink-features=AutomationControlled', '--no-sandbox', '--disable-dev-shm-usage'] };
@@ -87,6 +127,38 @@ async function getDestId(page, slug, country) {
       if (id) return id;
     } catch (e) {}
     await sleep(2500);
+  }
+  return null;
+}
+
+// resolve a destination to {dest_id, dest_type}: tries CITY page then REGION page.
+// Uses the PAIRED "dest_id":N,"dest_type":"X" JSON (the page's own identity) — pages embed
+// many other destinations' ids (promos), so a bare first-match regex grabs wrong ids.
+// Rejects garbage ids (Booking's not-found template embeds dest_id=224 etc.)
+async function resolveDest(page, city, country) {
+  const slug = slugify(city);
+  const candidates = [
+    { type: 'city', url: `https://www.booking.com/city/${country}/${slug}.en-gb.html` },
+    { type: 'region', url: `https://www.booking.com/region/${country}/${slug}.en-gb.html` },
+  ];
+  for (let attempt = 0; attempt < 3; attempt++) {
+    for (const cand of candidates) {
+      try {
+        const found = await page.evaluate(async ({ url }) => {
+          const res = await fetch(url, { credentials: 'include' });
+          if (!res.ok) return null;
+          const html = await res.text();
+          const pairs = [...html.matchAll(/"dest_id":(-?\d+),"dest_type":"(city|region)"/g)];
+          if (pairs.length) return { id: pairs[0][1], type: pairs[0][2] };
+          const m = html.match(/dest_id=(-?\d+)/);
+          return m ? { id: m[1], type: null } : null;
+        }, { url: cand.url });
+        if (found && found.id && /^\d{4,}$/.test(found.id)) {
+          return { dest_id: found.id, dest_type: found.type || cand.type };
+        }
+      } catch (e) {}
+    }
+    await sleep(2000);
   }
   return null;
 }
@@ -214,22 +286,24 @@ async function scrape(cfg, opts = {}) {
       context = await newContext(browser, mobile, state);
       const page = await context.newPage();
       const sess = await getSession(page, country);
-      const dest = await getDestId(page, slug, country);
-      if (!dest) throw new Error('dest_id lookup failed');
+      const destInfo = await resolveDest(page, cfg.city, country);
+      if (!destInfo) throw new Error(`DEST_NOT_FOUND for "${cfg.city}" — Booking couldn't find it. Check the exact spelling (e.g. "Outer Banks" instead of "outerbanks") or pick it from the city list in the dashboard.`);
+      const dest = destInfo.dest_id;
 
       const dateRuns = [];
       const targets = [cfg.myProperty, ...(cfg.competitors || [])];
       const fullScan = opts.fullScan === true; // no competitors → crawl the whole place
       const maxScanPages = Math.max(2, Math.min(25, parseInt(cfg.maxScanPages || 12, 10)));
       let fullScanPages = 0;
+      let destActive = true; // set false → ss-only URL (Booking geocodes the name itself)
       for (let di = 0; di < pairs.length; di++) {
         const p = pairs[di];
         const q = new URLSearchParams({
           ss: cfg.city, efdco: '1', lang: 'en-us', sb: '1', src_elem: 'sb', src: 'index',
-          dest_id: dest, dest_type: 'city',
           checkin: p.checkin, checkout: p.checkout, group_adults: String(adults), no_rooms: '1', group_children: '0',
           selected_currency: cfg.currency || 'USD',
         });
+        if (destActive) { q.set('dest_id', dest); q.set('dest_type', destInfo.dest_type); }
         if (fullScan && di === 0) q.set('order', 'bayesian_review_score'); // default stable sort — mobile paginates reliably on it
         if (sess.aid) q.set('aid', sess.aid);
         if (sess.label) q.set('label', sess.label);
@@ -252,30 +326,45 @@ async function scrape(cfg, opts = {}) {
           return hotels;
         };
 
-        let hotels = [];
-        if (fullScan && di === 0) {
-          // FULL MARKET CRAWL: every page of results for the first date
-          const seen = new Set();
-          for (let pg = 0; pg < maxScanPages; pg++) {
-            const batch = await loadPage(pg * 25);
-            const fresh = batch.filter(h => !seen.has(norm(h.name)));
-            for (const h of fresh) seen.add(norm(h.name));
-            hotels.push(...fresh);
-            fullScanPages = pg + 1;
-            if (batch.length < 25 || fresh.length === 0) break; // last page
-            await sleep(2000); // polite gap between pages
+        const loadFirstDate = async () => {
+          if (fullScan) {
+            // FULL MARKET CRAWL: every page of results for the first date
+            const seen = new Set();
+            let hotels = [];
+            for (let pg = 0; pg < maxScanPages; pg++) {
+              const batch = await loadPage(pg * 25);
+              const fresh = batch.filter(h => !seen.has(norm(h.name)));
+              for (const h of fresh) seen.add(norm(h.name));
+              hotels.push(...fresh);
+              fullScanPages = pg + 1;
+              if (batch.length < 25 || fresh.length === 0) break; // last page
+              await sleep(2000); // polite gap between pages
+            }
+            return hotels;
+          }
+          let hotels = await loadPage(0);
+          const stillMissing = targets.filter(t => !hotels.some(h => inName(h.name, t)));
+          if (stillMissing.length > 0) {
+            try {
+              const page2 = await loadPage(25);
+              for (const h of page2) { if (!hotels.some(m => norm(m.name) === norm(h.name))) hotels.push(h); }
+            } catch (e) {}
+          }
+          return hotels;
+        };
+
+        let hotels;
+        if (di === 0) {
+          hotels = await loadFirstDate();
+          // destination hint led to an empty page → retry letting Booking geocode ss itself
+          if (hotels.length === 0 && destActive) {
+            destActive = false;
+            q.delete('dest_id'); q.delete('dest_type');
+            console.error('DEST_RETRY_SS_ONLY for "' + cfg.city + '"');
+            hotels = await loadFirstDate();
           }
         } else {
           hotels = await loadPage(0);
-          if (di === 0) {
-            const stillMissing = targets.filter(t => !hotels.some(h => inName(h.name, t)));
-            if (stillMissing.length > 0) {
-              try {
-                const page2 = await loadPage(25);
-                for (const h of page2) { if (!hotels.some(m => norm(m.name) === norm(h.name))) hotels.push(h); }
-              } catch (e) {}
-            }
-          }
         }
         dateRuns.push({ checkin: p.checkin, checkout: p.checkout, hotels });
         await sleep(1500); // polite gap between dates
@@ -293,4 +382,4 @@ async function scrape(cfg, opts = {}) {
   throw lastErr || new Error('scrape failed');
 }
 
-module.exports = { scrape, buildNameIndex, launchBrowser, newContext, getDestId, getSession, slugify, norm, inName };
+module.exports = { scrape, buildNameIndex, buildGeoIndex, GEO_FILE, STATE_FILE, resolveDest, getDestId, launchBrowser, newContext, getSession, slugify, norm, inName, humanizeSlug };
