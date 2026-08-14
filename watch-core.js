@@ -95,10 +95,25 @@ const SOURCES = {
 // are the first title-case text block in the card's ancestor chain.
 async function scrapeGoogle(page, { city, checkin, checkout, adults, currency }) {
   const q = new URLSearchParams({ q: city, check_in: checkin, check_out: checkout, adults: String(adults || 2), hl: 'en', gl: 'us', currency: currency || 'USD' });
-  await page.goto('https://www.google.com/travel/hotels?' + q.toString(), { waitUntil: 'domcontentloaded', timeout: 60000 });
-  await new Promise(r => setTimeout(r, 5000));
-  try { await page.locator('button:has-text("Accept all")').first().click({ timeout: 4000, force: true }); await new Promise(r => setTimeout(r, 2500)); } catch (e) {}
-  try { await page.waitForSelector('[aria-label*="$"]', { timeout: 25000 }); } catch (e) {
+  const load = async () => {
+    await page.goto('https://www.google.com/travel/hotels?' + q.toString(), { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await new Promise(r => setTimeout(r, 6000));
+    try { await page.locator('button:has-text("Accept all")').first().click({ timeout: 4000, force: true }); await new Promise(r => setTimeout(r, 2000)); } catch (e) {}
+  };
+  await load();
+  // fast shell detection: Google sometimes serves a nav-only variant (no prices) to DC IPs
+  const shell = async () => page.evaluate(() => {
+    const prices = document.querySelectorAll('[aria-label*="$"]').length;
+    if (prices > 0) return false;
+    const t = document.body.innerText;
+    return /Sign in/.test(t) && /Explore/.test(t) && /Flights/.test(t) && /Vacation rentals/.test(t) && !/per night/i.test(t);
+  });
+  if (await shell()) {
+    console.error('GOOGLE_SHELL_RETRY');
+    await load(); // one reload retry
+    await new Promise(r => setTimeout(r, 4000));
+  }
+  try { await page.waitForSelector('[aria-label*="$"]', { timeout: 15000 }); } catch (e) {
     throw new Error('GOOGLE_NO_PRICES: ' + (await page.evaluate(() => document.body.innerText.slice(0, 120))));
   }
   let hotels = [];
