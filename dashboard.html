@@ -174,6 +174,18 @@
         <div class="muted" id="datePreview" style="margin-top:10px"></div>
       </div>
       <div class="card">
+        <h2>🌐 Sources</h2>
+        <div class="src-grid">
+          <label><input type="checkbox" id="src-booking"> <b>Booking.com</b><br><span class="muted">mobile rates · full market scan</span></label>
+          <label><input type="checkbox" id="src-google"> <b>Google Hotels</b><br><span class="muted">free web prices · no login</span></label>
+          <label><input type="checkbox" id="src-expedia"> <b>Expedia</b><br><span class="muted">⚠ blocked: Akamai bot wall</span></label>
+          <label><input type="checkbox" id="src-trivago"> <b>Trivago</b><br><span class="muted">⚠ blocked: consent shell</span></label>
+          <label><input type="checkbox" id="src-agoda"> <b>Agoda</b><br><span class="muted">⚠ needs city-id resolution</span></label>
+          <label><input type="checkbox" id="src-kayak"> <b>KAYAK</b><br><span class="muted">⚠ destination codes blocked</span></label>
+        </div>
+        <p class="muted" style="font-size:12px;margin-top:8px">Blocked sources are attempted each run (they may start working again); live ones are scraped every run. Only sources that return prices appear in results.</p>
+      </div>
+      <div class="card">
         <h2>🛡 Preferences</h2>
         <div class="toggle-row"><div><div class="t-label">Mobile rates only</div><div class="t-sub">Android browser profile — what phone users see</div></div><label class="switch"><input type="checkbox" id="setMobile" checked><span class="sl"></span></label></div>
         <div class="toggle-row"><div><div class="t-label">Stealth mode (free CAPTCHA hardening)</div><div class="t-sub">Fingerprint masking, session persistence, retry ladder — no paid API</div></div><label class="switch"><input type="checkbox" id="setStealth" checked><span class="sl"></span></label></div>
@@ -311,6 +323,8 @@ async function loadAll() {
   $('setAdults').value = CONFIG.adults || 2;
   $('setMobile').checked = CONFIG.mobile !== false;
   $('setStealth').checked = CONFIG.stealth !== false;
+  const srcs = CONFIG.sources || ['booking', 'google'];
+  ['booking', 'google', 'expedia', 'trivago', 'agoda', 'kayak'].forEach(s => { const el = $('src-' + s); if (el) el.checked = srcs.includes(s); });
   $('propMine').value = CONFIG.myProperty || '';
   window.__comps = CONFIG.competitors || []; renderChips();
   updateDatePreview();
@@ -335,6 +349,7 @@ async function saveConfig() {
     startDate: $('setStartDate').value, endDate: $('setEndDate').value,
     nights: +$('setNights').value, adults: +$('setAdults').value,
     mobile: $('setMobile').checked, stealth: $('setStealth').checked,
+    sources: ['booking', 'google', 'expedia', 'trivago', 'agoda', 'kayak'].filter(s => { const el = $('src-' + s); return el && el.checked; }),
   };
   await api('/api/config', { method: 'POST', body: JSON.stringify(body) });
   $('saveState').textContent = '✓ saved ' + new Date().toLocaleTimeString(); toast('Settings saved — date window rolls automatically with today');
@@ -451,6 +466,23 @@ function renderRun(d) {
       <td>${r.undercut.length ? '<span class="badge warn">⚠ below you</span>' : '<span class="badge ok">ok</span>'}</td></tr>`;
   }
   html += `</tbody></table>`;
+
+  // extra sources per date (google, …)
+  const srcLabels = { google: 'Google Hotels', expedia: 'Expedia', trivago: 'Trivago', agoda: 'Agoda', kayak: 'KAYAK' };
+  const srcAny = reps.some(r => (r.sources || []).length);
+  if (srcAny) {
+    html += `<div class="card" style="margin-top:14px"><h2>Other sources</h2>`;
+    for (const r of reps) {
+      const parts = [];
+      for (const s of (r.sources || [])) {
+        const lb = srcLabels[s.source] || s.source;
+        if (s.blocked) { parts.push(`<span class="muted">${lb}: ${s.blocked.split('—')[0].trim()}</span>`); continue; }
+        parts.push(`<span>${lb}: <b class="price">$${s.mine ? s.mine.price : '—'}</b>${s.mine && s.undercut.length ? ` <span class="badge warn">⚠ ${s.undercut.length} cheaper</span>` : ''} · ${s.hotels.length} hotels</span>`);
+      }
+      html += `<div class="muted" style="font-size:12px;margin:6px 0"><b>${r.checkin} → ${r.checkout}:</b> ${parts.join(' &nbsp;·&nbsp; ')}</div>`;
+    }
+    html += `</div>`;
+  }
 
   if (d.fullList) {
     const all = reps[0].hotels.slice(0, 60);

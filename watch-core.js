@@ -81,7 +81,64 @@ async function buildGeoIndex() {
   return { countries, cities: uniqCities };
 }
 
-// ---------- browser lifecycle (persistent session = returning user = fewer challenges) ----------
+// ---------- multi-source adapters (Booking is the primary; extras attach per date) ----------
+const SOURCES = {
+  booking: { label: 'Booking.com', live: true, note: 'mobile rates, full market scan' },
+  google: { label: 'Google Hotels', live: true, note: 'free web prices, no login' },
+  expedia: { label: 'Expedia', live: false, note: 'Akamai "Bot or Not?" wall — automation blocked without paid bypass' },
+  trivago: { label: 'Trivago', live: false, note: 'consent shell only, no prices exposed to automation' },
+  agoda: { label: 'Agoda', live: false, note: 'needs per-city id resolution — not wired yet' },
+  kayak: { label: 'KAYAK', live: false, note: 'destination codes blocked from automation' },
+};
+
+// Google Hotels: prices sit in aria-labels ("$137 for dates Aug 17 – 18"); hotel names
+// are the first title-case text block in the card's ancestor chain.
+async function scrapeGoogle(page, { city, checkin, checkout, adults, currency }) {
+  const q = new URLSearchParams({ q: city, check_in: checkin, check_out: checkout, adults: String(adults || 2), hl: 'en', gl: 'us', currency: currency || 'USD' });
+  await page.goto('https://www.google.com/travel/hotels?' + q.toString(), { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await new Promise(r => setTimeout(r, 5000));
+  try { await page.locator('button:has-text("Accept all")').first().click({ timeout: 4000, force: true }); await new Promise(r => setTimeout(r, 2500)); } catch (e) {}
+  try { await page.waitForSelector('[aria-label*="$"]', { timeout: 25000 }); } catch (e) {
+    throw new Error('GOOGLE_NO_PRICES: ' + (await page.evaluate(() => document.body.innerText.slice(0, 120))));
+  }
+  let hotels = [];
+  for (let i = 0; i < 6 && hotels.length < 5; i++) {
+    await sleep(2000);
+    hotels = await page.evaluate(() => {
+      const HEAD = 'h1,h2,h3,h4,div[role="heading"]';
+      const out = []; const seen = new Set();
+      for (const head of document.querySelectorAll(HEAD)) {
+        const name = (head.innerText || '').trim();
+        if (name.length < 3 || name.length > 60) continue;
+        if (/^(Hotels|Results|Explore|Flights|Vacation|View|See|More|All|Price|Filter|Sort|Nearby|Top)/i.test(name) || /^\d+/.test(name)) continue;
+        let price = null, el = head;
+        for (let d2 = 0; d2 < 5 && el; d2++) {
+          el = el.parentElement; if (!el) continue;
+          const m = (el.innerText || '').match(/\$(\d{2,4})/);
+          if (m) { price = +m[1]; break; }
+        }
+        if (price === null) continue;
+        const key = name.toLowerCase().replace(/[^a-z0-9]+/g, '');
+        if (seen.has(key)) continue; seen.add(key);
+        out.push({ name, price });
+      }
+      return out;
+    });
+  }
+  return { source: 'google', hotels };
+}
+
+async function scrapeSource(source, page, cfg, { checkin, checkout, adults }) {
+  switch (source) {
+    case 'google':
+      return await scrapeGoogle(page, { city: cfg.city, checkin, checkout, adults, currency: cfg.currency || 'USD' });
+    case 'expedia': return { source, blocked: SOURCES.expedia.note, hotels: [] };
+    case 'trivago': return { source, blocked: SOURCES.trivago.note, hotels: [] };
+    case 'agoda': return { source, blocked: SOURCES.agoda.note, hotels: [] };
+    case 'kayak': return { source, blocked: SOURCES.kayak.note, hotels: [] };
+    default: return { source, blocked: 'unknown source', hotels: [] };
+  }
+}
 async function launchBrowser(stealth = true) {
   const opts = { args: ['--disable-blink-features=AutomationControlled', '--no-sandbox', '--disable-dev-shm-usage'] };
   if (!stealth) opts.headless = false; // headful fallback for stubborn challenges (local runs)
@@ -366,7 +423,17 @@ async function scrape(cfg, opts = {}) {
         } else {
           hotels = await loadPage(0);
         }
-        dateRuns.push({ checkin: p.checkin, checkout: p.checkout, hotels });
+        // extra sources (Google Hotels etc.) — one lightweight load per date
+        const extra = [];
+        for (const src of opts.sources || cfg.sources || []) {
+          if (src === 'booking') continue;
+          try {
+            const r = await scrapeSource(src, page, cfg, { checkin: p.checkin, checkout: p.checkout, adults });
+            extra.push(r);
+          } catch (e) { extra.push({ source: src, blocked: e.message.slice(0, 120), hotels: [] }); }
+          await sleep(1500);
+        }
+        dateRuns.push({ checkin: p.checkin, checkout: p.checkout, hotels, sources: extra });
         await sleep(1500); // polite gap between dates
       }
 
@@ -382,4 +449,4 @@ async function scrape(cfg, opts = {}) {
   throw lastErr || new Error('scrape failed');
 }
 
-module.exports = { scrape, buildNameIndex, buildGeoIndex, GEO_FILE, STATE_FILE, resolveDest, getDestId, launchBrowser, newContext, getSession, slugify, norm, inName, humanizeSlug };
+module.exports = { scrape, scrapeSource, SOURCES, buildNameIndex, buildGeoIndex, GEO_FILE, STATE_FILE, resolveDest, getDestId, launchBrowser, newContext, getSession, slugify, norm, inName, humanizeSlug };

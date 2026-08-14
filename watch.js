@@ -41,6 +41,23 @@ function renderEmailHtml(c, runs) {
   const undAlert = und.length
     ? `<div style="background:#fdecea;border:1px solid #f5b7b1;border-radius:8px;padding:12px 16px;margin:14px 0;color:#922b21;font-size:13.5px"><b>⚠ Undercut alert:</b> a tracked competitor is cheaper than you on ${und.length} of ${runs.length} checked date(s). See table.</div>`
     : `<div style="background:#eafaf1;border:1px solid #a9dfbf;border-radius:8px;padding:12px 16px;margin:14px 0;color:#145a32;font-size:13.5px"><b>✓ Good news:</b> no tracked competitor is cheaper than you on any checked date.</div>`;
+  const SRC_LABEL = { google: 'Google Hotels', expedia: 'Expedia', trivago: 'Trivago', agoda: 'Agoda', kayak: 'KAYAK' };
+  let sourcesHtml = '';
+  for (const s of (runs[0].sources || [])) {
+    const label = SRC_LABEL[s.source] || s.source;
+    if (s.blocked) {
+      sourcesHtml += `<div style="margin:12px 0;padding:10px 14px;background:#fdf6ec;border:1px solid #f0d9b5;border-radius:8px;color:#7d6608;font-size:12.5px"><b>${label}</b> — not available: ${esc(s.blocked)}</div>`;
+      continue;
+    }
+    const srows = s.hotels.slice(0, 14).map((h, i) => {
+      const mine = s.mine && core.norm(h.name) === core.norm(s.mine.name);
+      return `<tr><td style="padding:6px 12px;border-bottom:1px solid #f2f2f2;color:#888">${i + 1}</td><td style="padding:6px 12px;border-bottom:1px solid #f2f2f2;${mine ? 'background:#fff8e1;font-weight:700' : ''}">${esc(h.name)}${mine ? ' ← yours' : ''}</td><td style="padding:6px 12px;border-bottom:1px solid #f2f2f2"><b>$${h.price}</b></td></tr>`;
+    }).join('');
+    sourcesHtml += `<h2 style="font-size:15px;color:#333;margin:26px 0 10px">${label} — ${esc(c.city)} · ${runs[0].checkin} → ${runs[0].checkout}</h2>
+      ${s.mine ? `<p style="font-size:13px">Your property: <b>$${s.mine.price}</b>/night on ${label}${s.undercut.length ? ` — <span style="color:#c0392b">⚠ ${s.undercut.length} cheaper option(s) found</span>` : ''}</p>` : ''}
+      <table style="border-collapse:collapse;width:100%;font-size:13px"><tr style="color:#888;text-align:left;font-size:11px;text-transform:uppercase"><th style="padding:6px 12px;border-bottom:2px solid #eee">#</th><th style="padding:6px 12px;border-bottom:2px solid #eee">Property</th><th style="padding:6px 12px;border-bottom:2px solid #eee">Price / night</th></tr>${srows}</table>
+      ${s.hotels.length > 14 ? `<p style="color:#888;font-size:12px">… and ${s.hotels.length - 14} more in the dashboard.</p>` : ''}`;
+  }
   return `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f7f6f2;font-family:Segoe UI,Arial,sans-serif">
 <div style="background:#141414;padding:22px 30px"><div style="font-size:20px;font-weight:700;color:#d4af37">Price Watch</div><div style="font-size:12px;color:#999;margin-top:2px">Booking.com mobile rates · ${esc(c.city)}</div></div>
 <div style="padding:24px 30px;background:#fff;max-width:640px;margin:0 auto">
@@ -49,6 +66,7 @@ function renderEmailHtml(c, runs) {
   ${undAlert}
   <h2 style="font-size:15px;color:#333;margin:20px 0 10px">Date by date${mine ? ' — your property: <span style="color:#b8860b">' + esc(mine) + '</span>' : ''}</h2>
   <table style="border-collapse:collapse;width:100%;font-size:13px"><tr style="color:#888;text-align:left;font-size:11px;text-transform:uppercase"><th style="padding:6px 12px;border-bottom:2px solid #eee">Dates</th><th style="padding:6px 12px;border-bottom:2px solid #eee">Your rate</th><th style="padding:6px 12px;border-bottom:2px solid #eee">Cheapest competitor</th><th style="padding:6px 12px;border-bottom:2px solid #eee">Vs you</th><th style="padding:6px 12px;border-bottom:2px solid #eee">Status</th></tr>${rows}</table>
+  ${sourcesHtml}
   ${listSection}
   <p style="color:#aaa;font-size:11px;margin-top:28px;border-top:1px solid #eee;padding-top:12px">Automated rate watch — runs every 5 hours. Prices change frequently; verify on Booking.com before relying on them. This is a personal competitive-research tool.</p>
 </div></body></html>`;
@@ -81,7 +99,7 @@ const inName = (h, t) => core.norm(h).includes(core.norm(t).slice(0, 24));
   const runCfg = { ...cfg, city };
   const hasComps = (cfg.competitors || []).length > 0;
   console.error(`SCRAPE city=${city} checkDates=${runCfg.checkDates || 1} mode=${MOBILE ? 'mobile' : 'desktop'} fullScan=${!hasComps}`);
-  const r = await core.scrape(runCfg, { mobile: MOBILE, fullScan: !hasComps });
+  const r = await core.scrape(runCfg, { mobile: MOBILE, fullScan: !hasComps, sources: cfg.sources });
 
   const reports = r.dateRuns.map(dr => {
     const found = {}, notFound = [];
@@ -93,7 +111,19 @@ const inName = (h, t) => core.norm(h).includes(core.norm(t).slice(0, 24));
     const comps = Object.entries(found).filter(([k]) => k !== cfg.myProperty)
       .map(([k, h]) => ({ key: k, ...h, delta: mine ? h.priceUSD - mine.priceUSD : null }))
       .sort((a, b) => a.priceUSD - b.priceUSD);
-    return { checkin: dr.checkin, checkout: dr.checkout, hotels: dr.hotels, mine, competitors: comps, notFound, undercut: comps.filter(x => x.delta < 0) };
+    const sources = (dr.sources || []).map(s => {
+      const sf = {}, snf = [];
+      for (const t of [cfg.myProperty, ...(cfg.competitors || [])]) {
+        const hit = (s.hotels || []).find(h => inName(h.name, t));
+        if (hit) sf[t] = hit; else snf.push(t);
+      }
+      const smine = sf[cfg.myProperty];
+      const scomps = Object.entries(sf).filter(([k]) => k !== cfg.myProperty)
+        .map(([k, h]) => ({ key: k, ...h, delta: smine ? h.price - smine.price : null }))
+        .sort((a, b) => a.price - b.price);
+      return { source: s.source, blocked: s.blocked || null, hotels: (s.hotels || []).filter(h => h.price).sort((a, b) => a.price - b.price), mine: smine, competitors: scomps, notFound: snf, undercut: scomps.filter(x => x.delta < 0) };
+    });
+    return { checkin: dr.checkin, checkout: dr.checkout, hotels: dr.hotels, mine, competitors: comps, notFound, undercut: comps.filter(x => x.delta < 0), sources };
   });
 
   for (const rep of reports) {
@@ -104,7 +134,7 @@ const inName = (h, t) => core.norm(h).includes(core.norm(t).slice(0, 24));
 
   console.log(JSON.stringify({
     mode: r.mode, city, checkDates: r.checkDates, fullScanPages: r.fullScanPages || 0, dest_id: r.dest,
-    reports: reports.map(x => ({ checkin: x.checkin, checkout: x.checkout, totalHotelsOnPage: x.hotels.length, my: x.mine, competitors: x.competitors, notFound: x.notFound, undercut: x.undercut.map(c => c.name) })),
+    reports: reports.map(x => ({ checkin: x.checkin, checkout: x.checkout, totalHotelsOnPage: x.hotels.length, my: x.mine, competitors: x.competitors, notFound: x.notFound, undercut: x.undercut.map(c => c.name), sources: x.sources.map(s => ({ source: s.source, blocked: s.blocked || null, hotels: s.hotels.length, mine: s.mine, undercut: s.undercut.map(c => c.name) })) })),
     fullList: !hasComps,
   }, null, 2));
 

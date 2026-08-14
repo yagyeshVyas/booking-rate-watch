@@ -12,5 +12,13 @@
   "checkDates": 6,
   "startDaysFromToday": 0,
   "endDaysFromToday": 5,
-  "fullScan": true
+  "fullScan": true,
+  "sources": [
+    "booking",
+    "google",
+    "expedia",
+    "trivago",
+    "agoda",
+    "kayak"
+  ]
 }
