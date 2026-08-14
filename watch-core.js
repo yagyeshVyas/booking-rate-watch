@@ -111,7 +111,9 @@ async function scrapeGoogle(page, { city, checkin, checkout, adults, currency })
         const name = (head.innerText || '').trim();
         if (name.length < 3 || name.length > 60) continue;
         if (/^(Hotels|Results|Explore|Flights|Vacation|View|See|More|All|Price|Filter|Sort|Nearby|Top)/i.test(name) || /^\d+/.test(name)) continue;
-        let price = null, el = head;
+        let price = null, url = null, el = head;
+        const a = head.closest('a') || head.parentElement.closest('a');
+        if (a && /entity/i.test(a.href)) url = a.href;
         for (let d2 = 0; d2 < 5 && el; d2++) {
           el = el.parentElement; if (!el) continue;
           const m = (el.innerText || '').match(/\$(\d{2,4})/);
@@ -120,7 +122,7 @@ async function scrapeGoogle(page, { city, checkin, checkout, adults, currency })
         if (price === null) continue;
         const key = name.toLowerCase().replace(/[^a-z0-9]+/g, '');
         if (seen.has(key)) continue; seen.add(key);
-        out.push({ name, price });
+        out.push({ name, price, url });
       }
       return out;
     });
@@ -138,6 +140,74 @@ async function scrapeSource(source, page, cfg, { checkin, checkout, adults }) {
     case 'kayak': return { source, blocked: SOURCES.kayak.note, hotels: [] };
     default: return { source, blocked: 'unknown source', hotels: [] };
   }
+}
+
+// Google Hotels per-OTA price comparison (the "All options" list inside the property modal).
+// Path: search page → click the property card's price chip → modal opens with the OTA list
+// ("<Site>\n$price" lines after the "All options" header). The search URL is derived from
+// the entity URL (same q/check_in/check_out params, path replaced).
+async function scrapeGoogleOta(page, entityHref, adults, targets) {
+  // rebuild a CLEAN search URL from the entity URL (extra params change the page variant)
+  const src = new URL(entityHref);
+  const clean = new URL('https://www.google.com/travel/hotels');
+  for (const k of ['q', 'check_in', 'check_out', 'adults', 'hl', 'gl', 'currency']) {
+    const v = src.searchParams.get(k);
+    if (v) clean.searchParams.set(k, v);
+  }
+  if (!clean.searchParams.get('adults')) clean.searchParams.set('adults', String(adults || 2));
+  await page.goto(clean.toString(), { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await new Promise(r => setTimeout(r, 6000));
+  try { await page.locator('button:has-text("Accept all")').first().click({ timeout: 4000, force: true }); await new Promise(r => setTimeout(r, 2000)); } catch (e) {}
+  // open the property modal by clicking its price chip
+  const opened = await page.evaluate((targetName) => {
+    const HEAD = 'h1,h2,h3,h4,div[role="heading"]';
+    const norm = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '');
+    const want = norm(targetName).slice(0, 20);
+    for (const head of document.querySelectorAll(HEAD)) {
+      const name = String(head.innerText || '').trim();
+      if (!name || name.length > 60) continue;
+      if (!norm(name).includes(want) && !want.includes(norm(name).slice(0, 12))) continue;
+      let card = head;
+      for (let i = 0; i < 5 && card; i++) {
+        card = card.parentElement; if (!card) break;
+        const priceEl = [...card.querySelectorAll('[aria-label*="$"], [role="button"]')].find(e => /\$\d{2,4}/.test((e.getAttribute('aria-label') || '') + ' ' + (e.innerText || '')));
+        if (priceEl) { priceEl.click(); return true; }
+      }
+    }
+    return false;
+  }, targets);
+  await new Promise(r => setTimeout(r, 4500));
+  if (!opened) {
+    // fallback: direct entity page → click Prices tab
+    await page.goto(entityHref, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await new Promise(r => setTimeout(r, 5000));
+    await page.evaluate(() => {
+      const els = [...document.querySelectorAll('[role="tab"],button,[jsaction]')];
+      const el = els.find(e => (e.innerText || '').trim() === 'Prices');
+      if (el) el.click();
+    });
+    await new Promise(r => setTimeout(r, 3000));
+  }
+  const pairs = await page.evaluate(() => {
+    const txt = document.body.innerText;
+    const re = /^([^\n]{2,44})\n[^\n]{0,34}\$(\d{2,4})/gm;
+    const out = []; let m;
+    while ((m = re.exec(txt))) out.push([m[1].trim(), +m[2]]);
+    return out;
+  });
+  // pairs: [property, $X] then OTAs (site-ish names); skip the property, keep OTA names,
+  // stop at hotel-word names (similar-hotels section)
+  const OTA_RE = /\.com$|\.net$|^official site$|priceline|orbitz|travelocity|cheaptickets|hotwire|agoda|kayak|snaptravel|getaroom|goseek|dealbase|hotels\s+in\s+america|^trip\.com/i;
+  const out = [];
+  const seen = new Set();
+  for (let i = 1; i < pairs.length; i++) {
+    const [name, price] = pairs[i];
+    if (OTA_RE.test(name)) {
+      const k = name.toLowerCase();
+      if (!seen.has(k)) { seen.add(k); out.push({ ota: name, price }); }
+    } else if (/hotel|inn|resort|lodge|suites|motel|place/i.test(name)) break;
+  }
+  return out;
 }
 async function launchBrowser(stealth = true) {
   const opts = { args: ['--disable-blink-features=AutomationControlled', '--no-sandbox', '--disable-dev-shm-usage'] };
@@ -353,6 +423,7 @@ async function scrape(cfg, opts = {}) {
       const maxScanPages = Math.max(2, Math.min(25, parseInt(cfg.maxScanPages || 12, 10)));
       let fullScanPages = 0;
       let destActive = true; // set false → ss-only URL (Booking geocodes the name itself)
+      let bookingFailed = null;
       for (let di = 0; di < pairs.length; di++) {
         const p = pairs[di];
         const q = new URLSearchParams({
@@ -410,18 +481,25 @@ async function scrape(cfg, opts = {}) {
           return hotels;
         };
 
-        let hotels;
-        if (di === 0) {
-          hotels = await loadFirstDate();
-          // destination hint led to an empty page → retry letting Booking geocode ss itself
-          if (hotels.length === 0 && destActive) {
-            destActive = false;
-            q.delete('dest_id'); q.delete('dest_type');
-            console.error('DEST_RETRY_SS_ONLY for "' + cfg.city + '"');
+        let hotels = [];
+        let dateBookingError = null;
+        try {
+          if (di === 0) {
             hotels = await loadFirstDate();
+            // destination hint led to an empty page → retry letting Booking geocode ss itself
+            if (hotels.length === 0 && destActive) {
+              destActive = false;
+              q.delete('dest_id'); q.delete('dest_type');
+              console.error('DEST_RETRY_SS_ONLY for "' + cfg.city + '"');
+              hotels = await loadFirstDate();
+            }
+          } else {
+            hotels = await loadPage(0);
           }
-        } else {
-          hotels = await loadPage(0);
+        } catch (e) {
+          dateBookingError = e.message;
+          if (!bookingFailed) bookingFailed = e.message;
+          console.error('BOOKING_FAILED date ' + p.checkin + ': ' + e.message);
         }
         // extra sources (Google Hotels etc.) — one lightweight load per date
         const extra = [];
@@ -433,13 +511,29 @@ async function scrape(cfg, opts = {}) {
           } catch (e) { extra.push({ source: src, blocked: e.message.slice(0, 120), hotels: [] }); }
           await sleep(1500);
         }
-        dateRuns.push({ checkin: p.checkin, checkout: p.checkout, hotels, sources: extra });
+        // per-OTA price comparison for tracked properties (Google "All options" panel) — first date only
+        if (di === 0 && (cfg.otaCompare !== false)) {
+          const g = extra.find(s => s.source === 'google' && s.hotels);
+          const otaCompare = [];
+          for (const t of targets) {
+            const h = g && g.hotels.find(h => inName(h.name, t));
+            if (h && h.url) {
+              try {
+                const ota = await scrapeGoogleOta(page, h.url, adults, t);
+                otaCompare.push({ target: t, ota });
+              } catch (e) { otaCompare.push({ target: t, ota: [], error: e.message.slice(0, 80) }); }
+            }
+          }
+          if (otaCompare.length) extra.push({ source: 'googleOta', targets: otaCompare, hotels: [] });
+        }
+        dateRuns.push({ checkin: p.checkin, checkout: p.checkout, hotels, sources: extra, bookingError: dateBookingError });
         await sleep(1500); // polite gap between dates
       }
 
       await saveState(context); // refresh session cookies
       await browser.close();
-      return { dateRuns, dest, mode: mobile ? 'mobile' : 'desktop', nights, adults, checkDates, fullScanPages };
+      if (!dateRuns.length) throw lastErr || new Error('scrape failed');
+      return { dateRuns, dest, mode: mobile ? 'mobile' : 'desktop', nights, adults, checkDates, fullScanPages, bookingError: bookingFailed };
     } catch (e) {
       lastErr = e;
       if (browser) await browser.close().catch(() => {});
@@ -449,4 +543,4 @@ async function scrape(cfg, opts = {}) {
   throw lastErr || new Error('scrape failed');
 }
 
-module.exports = { scrape, scrapeSource, SOURCES, buildNameIndex, buildGeoIndex, GEO_FILE, STATE_FILE, resolveDest, getDestId, launchBrowser, newContext, getSession, slugify, norm, inName, humanizeSlug };
+module.exports = { scrape, scrapeSource, scrapeGoogleOta, SOURCES, buildNameIndex, buildGeoIndex, GEO_FILE, STATE_FILE, resolveDest, getDestId, launchBrowser, newContext, getSession, slugify, norm, inName, humanizeSlug };

@@ -155,12 +155,27 @@ function renderEmailHtml(c, runs) {
   const undAlert = und.length
     ? `<div style="background:#fdecea;border:1px solid #f5b7b1;border-radius:8px;padding:12px 16px;margin:14px 0;color:#922b21;font-size:13.5px"><b>⚠ Undercut alert:</b> a tracked competitor is cheaper than you on ${und.length} of ${runs.length} checked date(s). See table.</div>`
     : `<div style="background:#eafaf1;border:1px solid #a9dfbf;border-radius:8px;padding:12px 16px;margin:14px 0;color:#145a32;font-size:13.5px"><b>✓ Good news:</b> no tracked competitor is cheaper than you on any checked date.</div>`;
+  const bkErr = runs[0] && runs[0].bookingError;
+  const bkWarning = bkErr ? `<div style="margin:12px 0;padding:10px 14px;background:#fdf6ec;border:1px solid #f0d9b5;border-radius:8px;color:#7d6608;font-size:12.5px"><b>Booking.com</b> was throttled/blocked this run (${esc(bkErr.slice(0, 60))}) — other sources below are still live. Booking usually recovers by the next run.</div>` : '';
 
   // extra sources (Google Hotels etc.) — first date, top list
   const SRC_LABEL = { google: 'Google Hotels', expedia: 'Expedia', trivago: 'Trivago', agoda: 'Agoda', kayak: 'KAYAK' };
   let sourcesHtml = '';
   for (const s of (runs[0].sources || [])) {
     const label = SRC_LABEL[s.source] || s.source;
+    if (s.source === 'googleOta') {
+      for (const t of (s.targets || [])) {
+        const rows = (t.ota || []).sort((a, b) => a.price - b.price).map((o, i) => `<tr>
+          <td style="padding:6px 12px;border-bottom:1px solid #f2f2f2;color:#888">${i + 1}</td>
+          <td style="padding:6px 12px;border-bottom:1px solid #f2f2f2">${esc(o.ota)}</td>
+          <td style="padding:6px 12px;border-bottom:1px solid #f2f2f2"><b>$${o.price}</b></td>
+        </tr>`).join('');
+        sourcesHtml += `<h2 style="font-size:15px;color:#333;margin:26px 0 10px">${esc(t.target)} — every booking site (Google comparison) · ${runs[0].checkin} → ${runs[0].checkout}</h2>
+        <table style="border-collapse:collapse;width:100%;font-size:13px"><tr style="color:#888;text-align:left;font-size:11px;text-transform:uppercase"><th style="padding:6px 12px;border-bottom:2px solid #eee">#</th><th style="padding:6px 12px;border-bottom:2px solid #eee">Site</th><th style="padding:6px 12px;border-bottom:2px solid #eee">Price / night</th></tr>${rows}</table>
+        ${t.error ? `<p style="color:#999;font-size:12px">${esc(t.error)}</p>` : ''}`;
+      }
+      continue;
+    }
     if (s.blocked) {
       sourcesHtml += `<div style="margin:12px 0;padding:10px 14px;background:#fdf6ec;border:1px solid #f0d9b5;border-radius:8px;color:#7d6608;font-size:12.5px"><b>${label}</b> — not available: ${esc(s.blocked)}</div>`;
       continue;
@@ -195,6 +210,7 @@ function renderEmailHtml(c, runs) {
       <th style="padding:6px 12px;border-bottom:2px solid #eee">Dates</th><th style="padding:6px 12px;border-bottom:2px solid #eee">Your rate</th>
       <th style="padding:6px 12px;border-bottom:2px solid #eee">Cheapest competitor</th><th style="padding:6px 12px;border-bottom:2px solid #eee">Vs you</th><th style="padding:6px 12px;border-bottom:2px solid #eee">Status</th>
     </tr>${rows}</table>
+  ${bkWarning}
   ${sourcesHtml}
   ${listSection}
   <p style="color:#aaa;font-size:11px;margin-top:28px;border-top:1px solid #eee;padding-top:12px">Automated rate watch — runs every 5 hours. Prices change frequently; verify on Booking.com before relying on them. This is a personal competitive-research tool.</p>
@@ -225,6 +241,7 @@ app.post('/api/run', async (req, res) => {
       const full = dr.hotels.filter(h => h.priceUSD).sort((a, b) => a.priceUSD - b.priceUSD);
       // per-source comparisons (google, …) — same target-matching logic
       const sources = (dr.sources || []).map(s => {
+        if (s.source === 'googleOta') return s; // already structured: {targets: [{target, ota: [{ota, price}]}]}
         const sf = {}, snf = [];
         for (const t of [c.myProperty, ...(c.competitors || [])]) {
           const hit = (s.hotels || []).find(h => core.inName(h.name, t));
@@ -240,7 +257,7 @@ app.post('/api/run', async (req, res) => {
           mine: smine, competitors: scomps, notFound: snf, undercut: scomps.filter(x => x.delta < 0),
         };
       });
-      return { checkin: dr.checkin, checkout: dr.checkout, hotels: dr.hotels, mine, competitors: comps, notFound, undercut, full, sources };
+      return { checkin: dr.checkin, checkout: dr.checkout, hotels: dr.hotels, mine, competitors: comps, notFound, undercut, full, sources, bookingError: dr.bookingError || null };
     });
 
     // history: one entry per date

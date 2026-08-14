@@ -476,10 +476,28 @@ function renderRun(d) {
       const parts = [];
       for (const s of (r.sources || [])) {
         const lb = srcLabels[s.source] || s.source;
+        if (s.source === 'googleOta') {
+          for (const t of (s.targets || [])) {
+            const best = (t.ota || []).slice().sort((a, b) => a.price - b.price)[0];
+            parts.push(`<span>🏨 <b>${t.target}</b>: ${best ? `${best.ota} <b class="price">$${best.price}</b>` : 'no prices'} · ${(t.ota || []).length} sites</span>`);
+          }
+          continue;
+        }
         if (s.blocked) { parts.push(`<span class="muted">${lb}: ${s.blocked.split('—')[0].trim()}</span>`); continue; }
         parts.push(`<span>${lb}: <b class="price">$${s.mine ? s.mine.price : '—'}</b>${s.mine && s.undercut.length ? ` <span class="badge warn">⚠ ${s.undercut.length} cheaper</span>` : ''} · ${s.hotels.length} hotels</span>`);
       }
       html += `<div class="muted" style="font-size:12px;margin:6px 0"><b>${r.checkin} → ${r.checkout}:</b> ${parts.join(' &nbsp;·&nbsp; ')}</div>`;
+    }
+    // full OTA tables
+    for (const r of reps) {
+      for (const s of (r.sources || [])) {
+        if (s.source !== 'googleOta') continue;
+        for (const t of (s.targets || [])) {
+          const rows = (t.ota || []).slice().sort((a, b) => a.price - b.price).map(o => `<tr><td class="muted">${o.ota}</td><td class="price">$${o.price}</td></tr>`).join('');
+          html += `<div class="card" style="margin-top:10px"><h2>${t.target} — every booking site (${r.checkin} → ${r.checkout})</h2>
+          <div style="max-height:300px;overflow-y:auto"><table><thead><tr><th>Site</th><th>Price / night</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+        }
+      }
     }
     html += `</div>`;
   }

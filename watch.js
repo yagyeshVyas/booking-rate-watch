@@ -45,6 +45,15 @@ function renderEmailHtml(c, runs) {
   let sourcesHtml = '';
   for (const s of (runs[0].sources || [])) {
     const label = SRC_LABEL[s.source] || s.source;
+    if (s.source === 'googleOta') {
+      for (const t of (s.targets || [])) {
+        const rows = (t.ota || []).sort((a, b) => a.price - b.price).map((o, i) => `<tr><td style="padding:6px 12px;border-bottom:1px solid #f2f2f2;color:#888">${i + 1}</td><td style="padding:6px 12px;border-bottom:1px solid #f2f2f2">${esc(o.ota)}</td><td style="padding:6px 12px;border-bottom:1px solid #f2f2f2"><b>$${o.price}</b></td></tr>`).join('');
+        sourcesHtml += `<h2 style="font-size:15px;color:#333;margin:26px 0 10px">${esc(t.target)} — every booking site (Google comparison) · ${runs[0].checkin} → ${runs[0].checkout}</h2>
+        <table style="border-collapse:collapse;width:100%;font-size:13px"><tr style="color:#888;text-align:left;font-size:11px;text-transform:uppercase"><th style="padding:6px 12px;border-bottom:2px solid #eee">#</th><th style="padding:6px 12px;border-bottom:2px solid #eee">Site</th><th style="padding:6px 12px;border-bottom:2px solid #eee">Price / night</th></tr>${rows}</table>
+        ${t.error ? `<p style="color:#999;font-size:12px">${esc(t.error)}</p>` : ''}`;
+      }
+      continue;
+    }
     if (s.blocked) {
       sourcesHtml += `<div style="margin:12px 0;padding:10px 14px;background:#fdf6ec;border:1px solid #f0d9b5;border-radius:8px;color:#7d6608;font-size:12.5px"><b>${label}</b> — not available: ${esc(s.blocked)}</div>`;
       continue;
@@ -112,6 +121,7 @@ const inName = (h, t) => core.norm(h).includes(core.norm(t).slice(0, 24));
       .map(([k, h]) => ({ key: k, ...h, delta: mine ? h.priceUSD - mine.priceUSD : null }))
       .sort((a, b) => a.priceUSD - b.priceUSD);
     const sources = (dr.sources || []).map(s => {
+      if (s.source === 'googleOta') return s;
       const sf = {}, snf = [];
       for (const t of [cfg.myProperty, ...(cfg.competitors || [])]) {
         const hit = (s.hotels || []).find(h => inName(h.name, t));
@@ -134,7 +144,7 @@ const inName = (h, t) => core.norm(h).includes(core.norm(t).slice(0, 24));
 
   console.log(JSON.stringify({
     mode: r.mode, city, checkDates: r.checkDates, fullScanPages: r.fullScanPages || 0, dest_id: r.dest,
-    reports: reports.map(x => ({ checkin: x.checkin, checkout: x.checkout, totalHotelsOnPage: x.hotels.length, my: x.mine, competitors: x.competitors, notFound: x.notFound, undercut: x.undercut.map(c => c.name), sources: x.sources.map(s => ({ source: s.source, blocked: s.blocked || null, hotels: s.hotels.length, mine: s.mine, undercut: s.undercut.map(c => c.name) })) })),
+    reports: reports.map(x => ({ checkin: x.checkin, checkout: x.checkout, totalHotelsOnPage: x.hotels.length, my: x.mine, competitors: x.competitors, notFound: x.notFound, undercut: x.undercut.map(c => c.name), sources: x.sources.map(s => ({ source: s.source, blocked: s.blocked || null, hotels: s.hotels ? s.hotels.length : 0, mine: s.mine, undercut: (s.undercut || []).map(c => c.name), targets: s.targets })) })),
     fullList: !hasComps,
   }, null, 2));
 
