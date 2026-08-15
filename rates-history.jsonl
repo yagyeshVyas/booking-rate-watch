@@ -187,3 +187,9 @@
 {"at":"2026-08-15T15:47:55.423Z","city":"Outer Banks","checkin":"2026-08-18","checkout":"2026-08-19","mode":"mobile","mine":{"name":"Heart of Manteo","price":58},"competitors":[]}
 {"at":"2026-08-15T15:47:55.423Z","city":"Outer Banks","checkin":"2026-08-19","checkout":"2026-08-20","mode":"mobile","mine":{"name":"Heart of Manteo","price":58},"competitors":[]}
 {"at":"2026-08-15T15:47:55.423Z","city":"Outer Banks","checkin":"2026-08-20","checkout":"2026-08-21","mode":"mobile","mine":{"name":"Heart of Manteo","price":58},"competitors":[]}
+{"at":"2026-08-15T19:46:04.292Z","city":"Outer Banks","checkin":"2026-08-15","checkout":"2026-08-16","mode":"mobile","mine":{"name":"Heart of Manteo","price":138},"competitors":[]}
+{"at":"2026-08-15T19:46:04.292Z","city":"Outer Banks","checkin":"2026-08-16","checkout":"2026-08-17","mode":"mobile","mine":null,"competitors":[]}
+{"at":"2026-08-15T19:46:04.292Z","city":"Outer Banks","checkin":"2026-08-17","checkout":"2026-08-18","mode":"mobile","mine":{"name":"Heart of Manteo","price":58},"competitors":[]}
+{"at":"2026-08-15T19:46:04.292Z","city":"Outer Banks","checkin":"2026-08-18","checkout":"2026-08-19","mode":"mobile","mine":{"name":"Heart of Manteo","price":58},"competitors":[]}
+{"at":"2026-08-15T19:46:04.292Z","city":"Outer Banks","checkin":"2026-08-19","checkout":"2026-08-20","mode":"mobile","mine":{"name":"Heart of Manteo","price":58},"competitors":[]}
+{"at":"2026-08-15T19:46:04.292Z","city":"Outer Banks","checkin":"2026-08-20","checkout":"2026-08-21","mode":"mobile","mine":{"name":"Heart of Manteo","price":58},"competitors":[]}
